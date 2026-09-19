@@ -5,16 +5,25 @@
 
 const DB_NAME = "gotham_unbound_storage";
 const STORE = "kv";
+let connection;
 
 function openDB() {
-  return new Promise((resolve, reject) => {
+  if (connection) return connection;
+  connection = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      db.onversionchange = () => { db.close(); connection = null; };
+      db.onclose = () => { connection = null; };
+      resolve(db);
+    };
+    req.onerror = () => { connection = null; reject(req.error); };
+    req.onblocked = () => { connection = null; reject(new Error("Close other app tabs to finish opening the logbook.")); };
   });
+  return connection;
 }
 
 window.storage = {
@@ -37,6 +46,7 @@ window.storage = {
       tx.objectStore(STORE).put(value, key);
       tx.oncomplete = () => resolve({ key, value, shared: false });
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error("Save interrupted"));
     });
   },
   async delete(key) {
@@ -46,6 +56,7 @@ window.storage = {
       tx.objectStore(STORE).delete(key);
       tx.oncomplete = () => resolve({ key, deleted: true, shared: false });
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error("Delete interrupted"));
     });
   },
   async list(prefix) {

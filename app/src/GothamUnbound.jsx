@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import {
   Menu, Bell, ChevronLeft, ChevronRight, Plus, X, Check,
   Home as HomeIcon, Dumbbell, TrendingUp as TrendingUpIcon, Utensils, MoreHorizontal,
@@ -6,7 +6,8 @@ import {
   Download, Upload, User, Camera, Ruler, AlertTriangle, ShieldAlert,
   RotateCcw, Bell as BellIcon, BellOff, Bookmark, ArrowLeftRight, Trophy, ArrowUp, ArrowDown,
 } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
+import WeightTrend from "./WeightTrend.jsx";
+import { sessionDateKey, sessionKind, sessionTitle, indexTrainingLog, makeTrainingEntry, upsertDailyLog, withDailyReadiness, sessionDuration, validLogDate } from "./training-log.js";
 
 /* ---------------------------------------------------------------------- */
 /*  PROGRAM DATA                                                           */
@@ -224,7 +225,8 @@ async function storageGet(key) {
   try { const r = await window.storage.get(key, false); return r ? JSON.parse(r.value) : null; } catch { return null; }
 }
 async function storageSet(key, val) {
-  try { await window.storage.set(key, JSON.stringify(val), false); } catch { /* best effort */ }
+  try { await window.storage.set(key, JSON.stringify(val), false); return true; }
+  catch (error) { console.warn("Could not save logbook data", error); return false; }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -325,7 +327,7 @@ const CSS = `
 
 /* hero / home header */
 .hero{ position:relative; height:190px; margin:-4px -16px 16px; overflow:hidden; }
-.hero svg{ position:absolute; inset:0; width:100%; height:100%; }
+.hero > svg{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 .hero .label{ position:absolute; left:18px; bottom:16px; }
 .hero .brand{ font-size:22px; font-weight:800; letter-spacing:0.06em; color:#fff; text-shadow:0 2px 12px rgba(0,0,0,0.6); }
 .hero .tag{ font-size:10px; letter-spacing:0.18em; color:var(--gold); margin-top:3px; font-weight:600; }
@@ -611,15 +613,91 @@ input[type=range]::-moz-range-thumb{
 input[type=range]:active::-moz-range-thumb{ transform:scale(1.18); }
 @keyframes prSlideIn{ from{ transform:translateY(-16px); opacity:0; } to{ transform:translateY(0); opacity:1; } }
 .pr-banner{ animation: prSlideIn .3s cubic-bezier(0.4,0,0.2,1); }
+
+/* Phone-first controls, Safari keyboard sizing, and iPhone safe areas. */
+html{ color-scheme:dark; -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+body{ overflow-x:clip; }
+button,input,select,textarea{ font-family:inherit; }
+button{ touch-action:manipulation; cursor:pointer; }
+button:disabled{ cursor:default; }
+button:focus-visible,a:focus-visible{ outline:2px solid var(--gold); outline-offset:3px; }
+.gu-root{ min-height:100vh; min-height:100dvh; padding-top:env(safe-area-inset-top,0px); padding-bottom:calc(86px + env(safe-area-inset-bottom,0px)); }
+.gu-body{ padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px)); }
+.topbar{ min-height:64px; }
+.bottom-nav{ padding-bottom:calc(6px + env(safe-area-inset-bottom,0px)); padding-left:env(safe-area-inset-left,0px); padding-right:env(safe-area-inset-right,0px); }
+.nav-btn{ min-height:58px; font-size:11px; gap:5px; }
+.keyboard-open .bottom-nav{ visibility:hidden; }
+.gold-btn,.ghost-btn,.pill-btn,.seg-chip,.subtab,.set-tab,.type-chip,.quick-chip,.qf-chip,.units-toggle button{ min-height:44px; }
+.icon-btn{ width:44px; height:44px; }
+.stepper button,.rest-bar .ctrl{ width:44px; height:44px; }
+.set-tabs,.subtabs{ padding-bottom:3px; overscroll-behavior-x:contain; }
+.subtab{ padding:9px 13px; }
+.gu-input,.rir-select,.notes-input,input[type=date],input[type=number],textarea{ font-size:16px; min-height:44px; }
+.gu-input,.rir-select{ max-width:100%; }
+input[type=date]{ -webkit-appearance:none; appearance:none; width:100%; min-width:0; text-align:left; }
+input[type=date]::-webkit-date-and-time-value{ text-align:left; }
+textarea.gu-input{ text-align:left; resize:vertical; }
+.stat-tile,.stat-grid-2 > *{ min-width:0; }
+.stat-tile{ padding:12px; }
+.stat-tile .big{ font-size:clamp(17px,5vw,20px); line-height:1.4; }
+.hero .brand{ font-size:clamp(19px,5.6vw,22px); }
+.gym-wrap{ width:100%; max-width:480px; margin:0 auto; padding:calc(18px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px)); overscroll-behavior-y:contain; }
+.sheet-backdrop{ position:fixed; inset:0; top:var(--visual-top,0px); bottom:auto; height:100vh; height:var(--visible-height,100dvh); z-index:90; display:flex; align-items:flex-end; justify-content:center; background:rgba(4,4,6,.78); padding-top:max(12px,env(safe-area-inset-top,0px)); }
+.sheet-panel{ width:100%; max-width:480px; max-height:100%; overflow-y:auto; overscroll-behavior-y:contain; padding:16px 18px calc(20px + env(safe-area-inset-bottom,0px)); background:var(--card); border:1px solid var(--line); border-bottom:0; border-radius:24px 24px 0 0; outline:none; }
+.sheet-heading{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
+.sheet-heading h2{ font-size:20px; margin:0; }
+.form-label{ display:block; margin:0 0 16px; font-size:13px; color:var(--dim); font-weight:600; }
+.form-label > input,.form-label > select,.form-label > textarea{ display:block; margin-top:7px; text-align:left; font-weight:400; }
+.helper-text{ color:var(--dim); font-size:13px; line-height:1.55; margin:10px 0 16px; }
+.helper-text .ghost-btn{ margin-top:10px; }
+.centered{ text-align:center; }
+.log-toggle{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:14px 0; }
+.log-toggle button{ min-height:48px; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:13px; border:1px solid var(--line); background:var(--card2); color:var(--dim); font-size:14px; }
+.log-toggle button.selected{ background:var(--gold-soft); color:var(--gold); border-color:var(--gold); }
+.check-label{ display:flex; gap:10px; align-items:center; min-height:44px; font-size:14px; margin-bottom:16px; }
+.check-label input{ width:20px; height:20px; accent-color:var(--gold); }
+.form-error{ color:#ffb0a9; font-size:13px; line-height:1.5; }
+.text-button{ display:flex; gap:5px; align-items:center; justify-content:center; width:100%; min-height:44px; padding:10px 0; margin-top:5px; border:0; background:none; color:var(--gold); font-size:12px; }
+.workout-choice{ width:100%; text-align:left; color:var(--text); }
+.workout-choice .info > span{ display:block; }
+.workout-choice .info .status{ display:flex; }
+.workout-choice .sub{ color:var(--dim); font-size:12px; margin-top:4px; }
+.workout-choice:disabled{ opacity:.5; }
+.active-workout{ border:1px solid var(--gold); border-radius:16px; background:var(--gold-soft); padding:14px; margin-bottom:14px; color:var(--gold); font-size:13px; line-height:1.5; }
+.active-workout .ghost-btn{ margin-top:10px; }
+.calendar-card .card-bd{ padding:12px; }
+.calendar-intro{ margin-top:0; }
+.period-nav{ display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:15px; font-weight:600; }
+.calendar-summary{ color:var(--dim); font-size:12px; text-align:center; margin:8px 0 16px; }
+.cal-grid{ grid-template-columns:repeat(7,minmax(0,1fr)); gap:3px; }
+.cal-cell{ min-height:44px; min-width:0; font-size:14px; border-radius:11px; }
+.cal-cell.rest{ background:rgba(79,163,224,.12); color:#91c9f3; border-color:rgba(79,163,224,.25); }
+.cal-cell.rest .dot,.cal-legend .dot.rest{ background:#91c9f3; }
+.cal-cell.check-in .dot,.cal-legend .dot.check-in{ background:var(--green); }
+.cal-cell.active-log{ border:1px dashed var(--gold); color:var(--gold); }
+.cal-cell.active-log .dot{ background:var(--gold); }
+.cal-legend{ gap:12px; flex-wrap:wrap; font-size:11px; margin:14px 0; }
+.day-detail{ border-top:1px solid var(--line); margin-top:16px; padding-top:2px; }
+.day-detail h3{ font-size:15px; margin:14px 0 10px; }
+.logged-session{ display:flex; align-items:center; gap:10px; background:var(--card2); border-radius:13px; padding:12px; margin-bottom:10px; }
+.logged-session .info{ flex:1; min-width:0; }
+.logged-session .nm{ font-size:14px; font-weight:600; overflow-wrap:anywhere; }
+.logged-session .sub{ color:var(--dim); font-size:12px; line-height:1.5; margin-top:4px; }
+.log-notes{ font-size:12px; color:var(--dim); white-space:pre-wrap; overflow-wrap:anywhere; margin:6px 0 0; }
+.weight-trend{ display:block; width:100%; height:auto; margin-top:8px; }
+.save-notice{ position:fixed; bottom:calc(78px + env(safe-area-inset-bottom,0px)); left:50%; transform:translateX(-50%); width:calc(100% - 32px); max-width:448px; border:1px solid var(--gold-dim); border-radius:14px; padding:13px 16px; background:#242015; color:#ffe09a; font-size:13px; line-height:1.5; z-index:100; box-shadow:0 4px 20px rgba(0,0,0,.25); }
+.floating-timer{ bottom:calc(84px + env(safe-area-inset-bottom,0px)) !important; }
+.pr-banner{ top:calc(14px + env(safe-area-inset-top,0px)) !important; }
+@media (prefers-reduced-motion:reduce){ *,*::before,*::after{ animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
 `;
 
 /* ---------------------------------------------------------------------- */
 /*  SMALL SHARED COMPONENTS                                                 */
 /* ---------------------------------------------------------------------- */
 
-function Card({ title, sub, children, flush }) {
+function Card({ title, sub, children, flush, className = "" }) {
   return (
-    <div className="card">
+    <div className={`card ${className}`}>
       {title && <div className="card-hd"><span className="t">{title}</span>{sub && <span className="s">{sub}</span>}</div>}
       <div className="card-bd" style={flush ? { paddingTop: 6 } : undefined}>{children}</div>
     </div>
@@ -717,9 +795,9 @@ function Stepper({ label, value, unit, onChange, step = 1, min = 0 }) {
     <div>
       <div className="field-lbl">{label}{unit ? ` (${unit})` : ""}</div>
       <div className="stepper">
-        <button onClick={() => onChange(Math.max(min, (Number(value) || 0) - step))}><Minus size={16} /></button>
+        <button aria-label={`Decrease ${label}`} onClick={() => onChange(Math.max(min, (Number(value) || 0) - step))}><Minus size={16} /></button>
         <div className="val">{value === "" || value == null ? "–" : value}</div>
-        <button onClick={() => onChange((Number(value) || 0) + step)}><Plus size={16} /></button>
+        <button aria-label={`Increase ${label}`} onClick={() => onChange((Number(value) || 0) + step)}><Plus size={16} /></button>
       </div>
     </div>
   );
@@ -781,7 +859,9 @@ export default function GothamUnbound() {
   const [gymMode, setGymMode] = useState(false);
   const [progressSubtab, setProgressSubtab] = useState("overview");
   const [showReadiness, setShowReadiness] = useState(false);
-  const [restDayPrompt, setRestDayPrompt] = useState(null);
+  const [dayLog, setDayLog] = useState(null);
+  const [notice, setNotice] = useState("");
+  const [saveError, setSaveError] = useState("");
 
   const [timer, setTimer] = useState(null);
   const [condPlayer, setCondPlayer] = useState(null);
@@ -817,7 +897,13 @@ export default function GothamUnbound() {
     })();
   }, []);
 
-  const persistSessions = useCallback((next) => { setSessions(next); storageSet("sessions", next); }, []);
+  const persistSessions = useCallback(async (next) => {
+    if (!await storageSet("sessions", next)) {
+      setSaveError("Your log could not be saved. Keep this app open, export a backup, and check available device storage.");
+      return false;
+    }
+    setSessions(next); setSaveError(""); return true;
+  }, []);
   const persistActive = useCallback((next) => { setActive(next); storageSet("activeSession", next); }, []);
   const persistNutrition = useCallback((next) => { setNutrition(next); storageSet("nutrition", next); }, []);
   const persistProfile = useCallback((next) => { setProfile(next); storageSet("profile", next); }, []);
@@ -826,6 +912,30 @@ export default function GothamUnbound() {
   const persistQuickFoods = useCallback((next) => { setQuickFoods(next); storageSet("quickFoods", next); }, []);
   const persistProgram = useCallback((next) => { setProgram(next); storageSet("customProgram", next); }, []);
   const persistPrLog = useCallback((next) => { setPrLog(next); storageSet("prLog", next); }, []);
+
+  const logIndex = useMemo(() => indexTrainingLog(sessions, program, active), [sessions, program, active]);
+  const chooseDay = useCallback((date = dateKey(), kind = "workout", dayId = 1) => setDayLog({ date, kind, dayId }), []);
+  useEffect(() => { window.scrollTo(0, 0); }, [tab, workoutDay, exerciseIdx]);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    let frame;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        document.documentElement.style.setProperty("--visible-height", `${viewport.height}px`);
+        document.documentElement.style.setProperty("--visual-top", `${viewport.offsetTop}px`);
+        document.documentElement.classList.toggle("keyboard-open", viewport.height < window.innerHeight * 0.75);
+      });
+    };
+    update(); viewport.addEventListener("resize", update, { passive: true }); viewport.addEventListener("scroll", update, { passive: true });
+    return () => { cancelAnimationFrame(frame); viewport.removeEventListener("resize", update); viewport.removeEventListener("scroll", update); document.documentElement.classList.remove("keyboard-open"); };
+  }, []);
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = setTimeout(() => setNotice(""), 4500);
+    return () => clearTimeout(timeout);
+  }, [notice]);
 
   useEffect(() => {
     if (!timer || !timer.running) return;
@@ -928,31 +1038,47 @@ export default function GothamUnbound() {
     if (withReadiness.length && avgSleep <= 2) signals.push("sleep quality has been poor going into recent sessions");
     if (failureCount >= 5) signals.push("you've been pushing sets to failure often lately");
     return { recommended: signals.length >= 2, signals };
-  }, [sessions]);
+  }, [sessions, program, historyFor]);
   const deloadActive = !!(profile && profile.deload && profile.deload.active && profile.deload.until && new Date(profile.deload.until) > new Date());
 
   /* ---- readiness composite score ---- */
-  const todaysReadiness = active && active.dayId === workoutDay ? active.readiness : (sessions.find((s) => dateKey(new Date(s.date)) === dateKey())?.readiness || null);
+  const todaysReadiness = active && (workoutDay || sessionDateKey(active) === dateKey()) ? active.readiness : (logIndex.get(dateKey())?.records.find((s) => s.readiness)?.readiness || null);
   const readinessPct = todaysReadiness ? Math.round(((todaysReadiness.sleep + todaysReadiness.energy + (6 - todaysReadiness.soreness)) / 15) * 100) : null;
   const readinessTier = readinessPct == null ? null : readinessPct >= 80 ? "Great" : readinessPct >= 65 ? "Good" : readinessPct >= 45 ? "Fair" : "Low";
 
   /* ---- navigation helpers ---- */
   const goProgram = () => { setTab("program"); setWorkoutDay(null); setExerciseIdx(null); setGymMode(false); };
   const switchTab = (t) => { setTab(t); setWorkoutDay(null); setExerciseIdx(null); setGymMode(false); };
-  const openDay = (dayId) => {
-    if (program[dayId].rest) { setRestDayPrompt(dayId); return; }
-    if (!active || active.dayId !== dayId) persistActive({ id: uid(), dayId, date: new Date().toISOString(), readiness: null, entries: {} });
-    setWorkoutDay(dayId); setExerciseIdx(null);
+  const openDay = (dayId, logDate = dateKey(), notes = "") => {
+    if (program[dayId]?.rest) { chooseDay(logDate, "rest"); return false; }
+    if (!program[dayId]?.exercises) return false;
+    if (active && (String(active.dayId) !== String(dayId) || sessionDateKey(active) !== logDate)) {
+      setNotice("Resume, finish, or discard your current workout before starting another."); return false;
+    }
+    if (!active) persistActive(makeTrainingEntry({ date: logDate, kind: "workout", dayId, notes, id: uid(), program }));
+    setTab("program"); setWorkoutDay(dayId); setExerciseIdx(null); setGymMode(false);
+    return true;
   };
   const openExercise = (i) => { setExerciseIdx(i); setGymMode(false); };
   const backToWorkout = () => { setExerciseIdx(null); setGymMode(false); };
   const backToProgram = () => { setWorkoutDay(null); setExerciseIdx(null); setGymMode(false); };
 
   const setReadiness = (readiness) => persistActive({ ...active, readiness });
-  const logRestDay = (dayId, readiness) => {
-    persistSessions([...sessions, { id: uid(), dayId, date: new Date().toISOString(), readiness, entries: {} }]);
-    setRestDayPrompt(null);
+  const saveDayLog = async (entry) => {
+    if (entry.kind === "workout" && sessions.some(session => sessionKind(session, program) === "workout" && sessionDateKey(session) === entry.localDate && String(session.dayId) === String(entry.dayId) && sessionTitle(session, program) === entry.workoutName)) {
+      setNotice("This workout is already logged for that date."); setDayLog(null); return true;
+    }
+    const next = upsertDailyLog(sessions, { ...entry, manualLog: entry.kind === "workout", completedAt: new Date().toISOString() }, program);
+    if (!await persistSessions(next)) return false;
+    setDayLog(null); setNotice(`${entry.kind === "rest" ? "Rest day" : "Workout"} saved for ${keyToDate(entry.localDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}.`);
+    return true;
   };
+  const removeLog = useCallback(async (id) => {
+    const session = sessions.find(item => item.id === id);
+    if (session && window.confirm(`Remove ${sessionTitle(session, program)} from ${sessionDateKey(session)}? This removes this log and its sets.`)) {
+      await persistSessions(sessions.filter(item => item.id !== id));
+    }
+  }, [sessions, program, persistSessions]);
 
   const addSet = (exId, set) => {
     const entries = { ...(active.entries || {}) };
@@ -972,13 +1098,16 @@ export default function GothamUnbound() {
     entries[exId] = { sets: cur.sets.filter((s) => s.id !== setId) };
     persistActive({ ...active, entries });
   };
-  const finishWorkout = () => {
+  const finishWorkout = async () => {
     if (!active) return;
-    persistSessions([...sessions, active]);
+    if (!await persistSessions([...sessions.filter(session => session.id !== active.id), { ...active, kind: "workout", completedAt: new Date().toISOString() }])) return;
     persistActive(null);
     setTab("home"); setWorkoutDay(null); setExerciseIdx(null); setGymMode(false);
   };
-  const discardWorkout = () => { persistActive(null); setWorkoutDay(null); setExerciseIdx(null); setGymMode(false); };
+  const discardWorkout = () => {
+    if (!window.confirm("Discard this unfinished workout and its sets? Completed workouts will not change.")) return;
+    persistActive(null); setWorkoutDay(null); setExerciseIdx(null); setGymMode(false);
+  };
 
   const logHydration = (oz) => {
     if (!nutrition) return;
@@ -1128,13 +1257,16 @@ export default function GothamUnbound() {
     );
   }
 
-  const day = workoutDay ? program[workoutDay] : null;
+  const day = workoutDay ? { ...program[workoutDay], ...(active?.template || {}) } : null;
   const combinedExercises = day ? [...day.exercises, ...(active?.extras || [])] : [];
   const exDef = exerciseIdx != null ? applySwap(combinedExercises[exerciseIdx], active?.swaps) : null;
 
   return (
     <div className="gu-root">
       <style>{CSS}</style>
+
+      {saveError && <div className="alert-banner" role="alert" style={{ margin: 12 }}>{saveError}</div>}
+      {notice && <div className="save-notice" role="status">{notice}</div>}
 
       {hydrationAlert && (
         <div className="alert-banner" style={{ margin: "0 16px 0", borderRadius: 0, background: "var(--gold-soft)", borderColor: "var(--gold)", color: "var(--gold)" }}>
@@ -1195,11 +1327,11 @@ export default function GothamUnbound() {
               <HomeView
                 active={active} openDay={openDay} sessions={sessions} measurements={measurements} photoIndex={photoIndex}
                 deloadSignal={deloadSignal} deloadActive={deloadActive} startDeload={startDeload} endDeload={endDeload}
-                setTab={setTab} profile={profile} nutrition={nutrition} program={program}
+                setTab={switchTab} profile={profile} nutrition={nutrition} program={program} logIndex={logIndex} chooseDay={chooseDay}
                 readinessPct={readinessPct} readinessTier={readinessTier} onTapReadiness={() => setShowReadiness(true)}
               />
             )}
-            {tab === "program" && !workoutDay && <ProgramView sessions={sessions} active={active} openDay={openDay} program={program} />}
+            {tab === "program" && !workoutDay && <ProgramView logIndex={logIndex} active={active} openDay={openDay} program={program} chooseDay={chooseDay} />}
             {tab === "program" && workoutDay && exerciseIdx == null && (
               <WorkoutView day={day} dayId={workoutDay} active={active} onStart={() => setExerciseIdx(0)} onOpenExercise={openExercise}
                 finishWorkout={finishWorkout} discardWorkout={discardWorkout}
@@ -1210,7 +1342,7 @@ export default function GothamUnbound() {
               <ProgressView
                 subtab={progressSubtab} setSubtab={setProgressSubtab} sessions={sessions} active={active}
                 measurements={measurements} addMeasurement={addMeasurement} photoIndex={photoIndex} addPhoto={addPhoto} deletePhoto={deletePhoto} profile={profile}
-                program={program} prLog={prLog}
+                program={program} prLog={prLog} logIndex={logIndex} onLogDate={chooseDay} onRemoveLog={removeLog}
               />
             )}
             {tab === "nutrition" && nutrition && profile && (
@@ -1244,18 +1376,21 @@ export default function GothamUnbound() {
         <ReadinessModal
           initial={todaysReadiness}
           onClose={() => setShowReadiness(false)}
-          onSave={(r) => {
-            if (active) setReadiness(r);
-            else persistSessions([...sessions.filter((s) => dateKey(new Date(s.date)) !== dateKey()), { id: uid(), dayId: 0, date: new Date().toISOString(), readiness: r, entries: {} }]);
+          onSave={async (r) => {
+            if (active && (workoutDay || sessionDateKey(active) === dateKey())) setReadiness(r);
+            else if (!await persistSessions(withDailyReadiness(sessions, dateKey(), r, uid(), program))) return;
             setShowReadiness(false);
           }}
         />
       )}
 
-      {restDayPrompt && <RestDayModal dayId={restDayPrompt} onSave={(r) => logRestDay(restDayPrompt, r)} onClose={() => setRestDayPrompt(null)} />}
+      {dayLog && <DayLogModal initial={dayLog} program={program} active={active} logIndex={logIndex} onSave={saveDayLog}
+        onStart={(entry) => { if (openDay(entry.dayId, entry.localDate, entry.notes)) setDayLog(null); }}
+        onResume={() => { if (active && openDay(active.dayId, sessionDateKey(active))) setDayLog(null); }}
+        onClose={() => setDayLog(null)} />}
 
       {timer && !workoutDay && (
-        <div className="alert-banner" style={{ position: "fixed", bottom: 84, left: 8, right: 8, borderRadius: 16, background: "var(--card)", borderColor: "var(--line)", color: "var(--text)", alignItems: "center", zIndex: 60 }}>
+        <div className="alert-banner floating-timer" style={{ position: "fixed", bottom: 84, left: 8, right: 8, borderRadius: 16, background: "var(--card)", borderColor: "var(--line)", color: "var(--text)", alignItems: "center", zIndex: 60 }}>
           <span style={{ flex: 1 }}>Rest — {timer.label}: <b style={{ color: "var(--gold)" }}>{fmtClock(timer.remaining)}</b></span>
           <button className="icon-btn" onClick={() => setTimer(null)}><X size={14} /></button>
         </div>
@@ -1274,20 +1409,44 @@ export default function GothamUnbound() {
   );
 }
 
+function Sheet({ title, onClose, children }) {
+  const panelRef = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const previous = document.activeElement;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    panelRef.current?.focus({ preventScroll: true });
+    const onKey = event => {
+      if (event.key === "Escape") closeRef.current();
+      if (event.key !== "Tab") return;
+      const items = [...panelRef.current.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]')].filter(element => element.getClientRects().length);
+      const first = items[0], last = items[items.length - 1];
+      if (!first) { event.preventDefault(); return; }
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === panelRef.current)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = overflow; document.removeEventListener("keydown", onKey); if (previous?.isConnected) previous.focus({ preventScroll: true }); };
+  }, []);
+  return <div className="sheet-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="sheet-panel" ref={panelRef} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}>
+      <div className="sheet-heading"><h2>{title}</h2><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><X size={20} /></button></div>
+      {children}
+    </section>
+  </div>;
+}
+
 function ReadinessModal({ initial, onSave, onClose }) {
   const [v, setV] = useState(initial || { sleep: 3, soreness: 3, energy: 3 });
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(4,4,6,0.7)", zIndex: 90, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
-      <div className="card" style={{ width: "100%", maxWidth: 480, margin: "0 auto", borderRadius: "20px 20px 0 0" }} onClick={(e) => e.stopPropagation()}>
-        <div className="card-hd"><span className="t">Today's Readiness</span></div>
-        <div className="card-bd">
+    <Sheet title="Readiness check-in" onClose={onClose}>
           <SliderRow label="Sleep Quality" val={v.sleep} onChange={(x) => setV((s) => ({ ...s, sleep: x }))} />
           <SliderRow label="Muscle Soreness" val={v.soreness} onChange={(x) => setV((s) => ({ ...s, soreness: x }))} />
           <SliderRow label="Energy Level" val={v.energy} onChange={(x) => setV((s) => ({ ...s, energy: x }))} />
           <button className="gold-btn" onClick={() => onSave(v)}><Check size={16} /> SAVE</button>
-        </div>
-      </div>
-    </div>
+    </Sheet>
   );
 }
 function SliderRow({ label, val, onChange }) {
@@ -1296,29 +1455,73 @@ function SliderRow({ label, val, onChange }) {
     <div className="slider-row">
       <div className="lbl"><span>{label}</span><b>{val} / 5</b></div>
       <input
-        type="range" min={1} max={5} value={val}
+        type="range" aria-label={label} min={1} max={5} value={val}
         onChange={(e) => onChange(Number(e.target.value))}
         style={{ background: `linear-gradient(to right, var(--gold) ${pct}%, #22252c ${pct}%)` }}
       />
     </div>
   );
 }
-function RestDayModal({ dayId, onSave, onClose }) {
-  const [v, setV] = useState({ sleep: 3, soreness: 3, energy: 3 });
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(4,4,6,0.7)", zIndex: 90, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
-      <div className="card" style={{ width: "100%", maxWidth: 480, margin: "0 auto", borderRadius: "20px 20px 0 0" }} onClick={(e) => e.stopPropagation()}>
-        <div className="card-hd"><span className="t">Recovery Day</span></div>
-        <div className="card-bd">
-          <p style={{ fontSize: 12.5, color: "var(--dim)", marginTop: 0 }}>A walk, mobility work, and sleep. Log how you're feeling to keep the record complete.</p>
-          <SliderRow label="Sleep Quality" val={v.sleep} onChange={(x) => setV((s) => ({ ...s, sleep: x }))} />
-          <SliderRow label="Muscle Soreness" val={v.soreness} onChange={(x) => setV((s) => ({ ...s, soreness: x }))} />
-          <SliderRow label="Energy Level" val={v.energy} onChange={(x) => setV((s) => ({ ...s, energy: x }))} />
-          <button className="gold-btn" onClick={() => onSave(v)}><Check size={16} /> SAVE</button>
-        </div>
+function DayLogModal({ initial, program, active, logIndex, onSave, onStart, onResume, onClose }) {
+  const [date, setDate] = useState(initial.date);
+  const [kind, setKind] = useState(initial.kind);
+  const [dayId, setDayId] = useState(String(initial.dayId || 1));
+  const [name, setName] = useState("");
+  const [notes, setNotes] = useState("");
+  const [includeReadiness, setIncludeReadiness] = useState(false);
+  const [readiness, setReadiness] = useState({ sleep: 3, soreness: 3, energy: 3 });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const templates = Object.entries(program).filter(([, day]) => day.exercises);
+  const isCustom = dayId === "custom";
+  const sameActive = active && String(active.dayId) === dayId && sessionDateKey(active) === date;
+  const conflict = active && !sameActive;
+  const valid = validLogDate(date) && date <= dateKey() && (kind === "rest" || !isCustom || !!name.trim());
+  const buildEntry = () => ({ ...makeTrainingEntry({ date, kind, dayId: isCustom ? "custom" : Number(dayId), name: isCustom ? name : "", notes, id: uid(), program }), readiness: kind === "rest" && includeReadiness ? readiness : null });
+  const save = async event => {
+    event.preventDefault();
+    if (!valid || saving) return;
+    setSaving(true); setError("");
+    try { if (!await onSave(buildEntry())) setError("The log could not be saved. Please try again."); }
+    catch (failure) { setError(failure.message); }
+    finally { setSaving(false); }
+  };
+  return <Sheet title="Log your day" onClose={() => !saving && onClose()}>
+    <form onSubmit={save}>
+      <label className="form-label">Log date<input className="gu-input" type="date" value={date} max={dateKey()} required onChange={event => setDate(event.target.value)} /></label>
+      <div className="log-toggle" aria-label="Day type">
+        <button type="button" className={kind === "workout" ? "selected" : ""} aria-pressed={kind === "workout"} onClick={() => setKind("workout")}><Dumbbell size={17} /> Workout</button>
+        <button type="button" className={kind === "rest" ? "selected" : ""} aria-pressed={kind === "rest"} onClick={() => setKind("rest")}><Pause size={17} /> Rest day</button>
       </div>
-    </div>
-  );
+      <p className="helper-text">Your schedule, your choice. Log any workout or rest day, including past dates.</p>
+      {kind === "workout" ? <>
+        <label className="form-label">Workout<select className="rir-select" value={dayId} onChange={event => setDayId(event.target.value)}>
+          {templates.map(([id, day]) => <option value={id} key={id}>{day.name} · {day.focus}</option>)}
+          <option value="custom">Custom workout</option>
+        </select></label>
+        {isCustom && <label className="form-label">Custom workout name<input className="gu-input" value={name} maxLength={100} placeholder="e.g. Swimming or full-body workout" onChange={event => setName(event.target.value)} required /></label>}
+      </> : <>
+        {!!logIndex.get(date)?.workouts && <p className="helper-text">You also have a workout logged on this date. Adding recovery will not delete it.</p>}
+        <label className="check-label"><input type="checkbox" checked={includeReadiness} onChange={event => setIncludeReadiness(event.target.checked)} /> Add a recovery check-in</label>
+        {includeReadiness && <>
+          <SliderRow label="Sleep Quality" val={readiness.sleep} onChange={value => setReadiness(current => ({ ...current, sleep: value }))} />
+          <SliderRow label="Muscle Soreness" val={readiness.soreness} onChange={value => setReadiness(current => ({ ...current, soreness: value }))} />
+          <SliderRow label="Energy Level" val={readiness.energy} onChange={value => setReadiness(current => ({ ...current, energy: value }))} />
+        </>}
+      </>}
+      <label className="form-label">Notes (optional)<textarea className="gu-input" rows={2} value={notes} maxLength={1000} placeholder="How did it go?" onChange={event => setNotes(event.target.value)} /></label>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      {kind === "workout" && !isCustom && <>
+        {conflict && <div className="helper-text">An unfinished workout is saved for {sessionDateKey(active)}. Resume it, or finish/discard it before starting another.<button type="button" className="ghost-btn" onClick={onResume}>Resume saved workout</button></div>}
+        <button type="button" className="gold-btn" disabled={!valid || saving || !!conflict} onClick={() => sameActive ? onResume() : onStart(buildEntry())}><Play size={17} /> {sameActive ? "Resume workout" : "Start tracking sets"}</button>
+        <p className="helper-text centered">Already trained? Log completion below without adding sets.</p>
+      </>}
+      <button className={kind === "rest" || isCustom ? "gold-btn" : "ghost-btn"} type="submit" disabled={!valid || saving || (kind === "workout" && !!sameActive)}>
+        <Check size={17} /> {saving ? "Saving…" : kind === "rest" ? "Save rest day" : "Log completed workout"}
+      </button>
+      {kind === "workout" && isCustom && <p className="helper-text">Custom completion logs appear in your calendar. They do not add set or strength totals.</p>}
+    </form>
+  </Sheet>;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1337,11 +1540,11 @@ function BatIcon({ size = 16, color = "currentColor" }) {
 /*  HOME                                                                    */
 /* ---------------------------------------------------------------------- */
 
-function HomeView({ active, openDay, sessions, deloadSignal, deloadActive, startDeload, endDeload, setTab, profile, nutrition, program, readinessPct, readinessTier, onTapReadiness }) {
-  const scheduledId = ((new Date().getDay() + 6) % 7) + 1;
-  const todayProgram = program[scheduledId];
+function HomeView({ active, openDay, sessions, deloadSignal, deloadActive, startDeload, endDeload, setTab, profile, nutrition, program, readinessPct, readinessTier, onTapReadiness, logIndex, chooseDay }) {
   const todayKey = dateKey();
-  const alreadyDone = sessions.some((s) => dateKey(new Date(s.date)) === todayKey && s.dayId === scheduledId);
+  const todayLog = logIndex.get(todayKey);
+  const workoutCount = todayLog?.workouts || 0;
+  const todayTitle = active ? sessionTitle(active, program) : workoutCount ? `${workoutCount} workout${workoutCount === 1 ? "" : "s"} logged` : todayLog?.rest ? "Rest day logged" : "Train on your terms";
 
   const today = nutrition.days[todayKey] || { calories: [], hydration: [] };
   const totalKcal = today.calories.reduce((s, c) => s + (Number(c.kcal) || 0), 0);
@@ -1356,8 +1559,8 @@ function HomeView({ active, openDay, sessions, deloadSignal, deloadActive, start
       <div className="hero">
         <GothamSkyline />
         <div style={{ position: "absolute", top: 14, left: 14, right: 14, display: "flex", justifyContent: "space-between" }}>
-          <div className="icon-btn" style={{ background: "rgba(20,22,28,0.55)" }}><Menu size={16} /></div>
-          <button className="icon-btn" style={{ background: "rgba(20,22,28,0.55)" }} onClick={() => switchTab("more")}><Bell size={16} /></button>
+          <button className="icon-btn" aria-label="Open workout library" style={{ background: "rgba(20,22,28,0.55)" }} onClick={() => setTab("program")}><Menu size={18} /></button>
+          <button className="icon-btn" aria-label="Open settings" style={{ background: "rgba(20,22,28,0.55)" }} onClick={() => setTab("more")}><Settings size={18} /></button>
         </div>
         <div className="label">
           <div className="brand">GOTHAM UNBOUND</div>
@@ -1383,22 +1586,24 @@ function HomeView({ active, openDay, sessions, deloadSignal, deloadActive, start
         )}
 
         <div className="today-card">
-          <div className="lbl">TODAY'S WORKOUT</div>
+          <div className="lbl">{active ? "WORKOUT IN PROGRESS" : "YOUR TRAINING DAY"}</div>
           <div className="row">
             <div>
-              <div className="nm">{todayProgram.rest ? "Recovery Day" : todayProgram.focus}</div>
-              <div className="sub">Day {scheduledId} of 5{!todayProgram.rest ? ` · ${todayProgram.exercises.length} exercises` : ""}</div>
+              <div className="nm">{todayTitle}</div>
+              <div className="sub">{active ? `Saved for ${keyToDate(sessionDateKey(active)).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Any workout. Any day. Rest when you choose."}</div>
             </div>
             <ChevronRight size={18} color="var(--dim)" />
           </div>
-          <button className="gold-btn" style={{ marginTop: 12 }} onClick={() => openDay(scheduledId)}>
+          <button className="gold-btn" style={{ marginTop: 12 }} onClick={() => active ? openDay(active.dayId, sessionDateKey(active)) : chooseDay(todayKey)}>
             <Play size={15} />
-            {alreadyDone ? "VIEW WORKOUT" : active && active.dayId === scheduledId ? "CONTINUE WORKOUT" : todayProgram.rest ? "LOG RECOVERY" : "START WORKOUT"}
+            {active ? "CONTINUE WORKOUT" : "CHOOSE A WORKOUT"}
           </button>
+          <button className="ghost-btn" style={{ marginTop: 9 }} onClick={() => chooseDay(todayKey, "rest")}><Pause size={16} /> LOG REST DAY</button>
+          <button className="text-button" onClick={() => setTab("progress")}>View or edit your training calendar <ChevronRight size={14} /></button>
         </div>
 
         <div className="stat-grid-2">
-          <div className="stat-tile readiness" onClick={onTapReadiness} style={{ cursor: "pointer" }}>
+          <div className="stat-tile readiness" role="button" tabIndex={0} aria-label="Log readiness" onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onTapReadiness(); } }} onClick={onTapReadiness} style={{ cursor: "pointer" }}>
             <Gauge pct={readinessPct || 0} size={48} stroke={5} color={readinessPct >= 65 ? "var(--green)" : readinessPct >= 45 ? "var(--gold)" : "var(--red)"}>
               <span style={{ fontSize: 11, fontWeight: 700 }}>{readinessPct != null ? `${readinessPct}%` : "–"}</span>
             </Gauge>
@@ -1432,52 +1637,28 @@ function HomeView({ active, openDay, sessions, deloadSignal, deloadActive, start
 /*  PROGRAM                                                                 */
 /* ---------------------------------------------------------------------- */
 
-function ProgramView({ sessions, openDay, program }) {
-  const [weekOffset, setWeekOffset] = useState(0);
-  const WEEK_TABS = [{ o: 0, l: "This Week" }, { o: -1, l: "Last Week" }, { o: -2, l: "2 Wks Ago" }, { o: -3, l: "3 Wks Ago" }];
-
-  const start = useMemo(() => {
-    const d = new Date(); d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + weekOffset * 7);
-    return d;
-  }, [weekOffset]);
-  const todayKey = dateKey();
-
-  const rows = [1, 2, 3, 4, 5, 6, 7].map((dayId) => {
-    const d = new Date(start); d.setDate(d.getDate() + (dayId - 1));
-    const k = dateKey(d);
-    const prog = program[dayId];
-    const has = sessions.some((s) => dateKey(new Date(s.date)) === k);
-    let status = "upcoming";
-    if (has) status = "done";
-    else if (k === todayKey) status = "today";
-    else if (k < todayKey && !prog.rest) status = "missed";
-    else if (k < todayKey && prog.rest) status = "done";
-    return { dayId, date: d, prog, status };
-  });
-
-  return (
-    <>
-      <div className="subtabs">
-        {WEEK_TABS.map((w) => <button key={w.o} className={`subtab ${weekOffset === w.o ? "on" : ""}`} onClick={() => setWeekOffset(w.o)}>{w.l}</button>)}
-      </div>
-      {rows.map((r) => (
-        <div key={r.dayId} className={`day-row ${r.status === "today" ? "today" : ""}`} style={{ cursor: weekOffset === 0 ? "pointer" : "default" }} onClick={() => weekOffset === 0 && openDay(r.dayId)}>
-          <div className="icon-circle"><BatIcon size={18} color="var(--gold)" /></div>
-          <div className="info">
-            <div className="nm">{r.date.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase()} · {r.prog.focus}</div>
-            <div className={`status ${r.status}`}>
-              {r.status === "done" && <><Check size={12} /> Completed</>}
-              {r.status === "today" && "Today"}
-              {r.status === "missed" && "Missed"}
-              {r.status === "upcoming" && (r.prog.rest ? "Rest / Active Recovery" : "Upcoming")}
-            </div>
-          </div>
-          {weekOffset === 0 && <ChevronRight size={16} color="var(--dim)" />}
-        </div>
-      ))}
-    </>
-  );
+function ProgramView({ logIndex, active, openDay, program, chooseDay }) {
+  const [selectedDate, setSelectedDate] = useState(dateKey());
+  const valid = validLogDate(selectedDate) && selectedDate <= dateKey();
+  const records = logIndex.get(selectedDate)?.records || [];
+  return <>
+    <div className="today-card">
+      <div className="lbl">WORKOUT LIBRARY</div><div className="nm">Your five sessions. No fixed weekdays.</div>
+      <p className="helper-text">Pick the date you trained, then choose any session. Saturday can be a workout; Monday can be rest.</p>
+      <label className="form-label">Training date<input type="date" className="gu-input" value={selectedDate} max={dateKey()} onChange={event => setSelectedDate(event.target.value)} /></label>
+    </div>
+    {active && <div className="active-workout"><span>Unfinished: {sessionTitle(active, program)} · {sessionDateKey(active)}</span><button className="ghost-btn" onClick={() => openDay(active.dayId, sessionDateKey(active))}>Resume workout</button></div>}
+    {Object.entries(program).filter(([, day]) => day.exercises).map(([id, day], index) => {
+      const logged = records.some(session => !session.inProgress && String(session.dayId) === id && sessionKind(session, program) === "workout");
+      return <button key={id} className="day-row workout-choice" disabled={!valid} onClick={() => chooseDay(selectedDate, "workout", Number(id))}>
+        <span className="icon-circle"><BatIcon size={20} color="var(--gold)" /></span>
+        <span className="info"><span className="nm">{day.name}</span><span className="sub">Session {index + 1} · {day.focus}</span><span className={`status ${logged ? "done" : "upcoming"}`}>{logged ? <><Check size={13} /> Logged on selected date</> : `${day.exercises.length} exercises · choose any day`}</span></span>
+        <ChevronRight size={18} color="var(--dim)" />
+      </button>;
+    })}
+    <button className="ghost-btn" disabled={!valid} onClick={() => chooseDay(selectedDate, "rest")}><Pause size={16} /> Log a rest day</button>
+    <button className="text-button" disabled={!valid} onClick={() => chooseDay(selectedDate, "workout", "custom")}>Log a custom workout <Plus size={16} /></button>
+  </>;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1505,7 +1686,8 @@ function WorkoutView({ day, dayId, active, onStart, onOpenExercise, finishWorkou
         <div className="art"><BatIcon size={26} /></div>
         <div>
           <div className="nm">{day.name}</div>
-          <div className="sub">Day {dayId} of 5 · {combined.length} exercise{combined.length === 1 ? "" : "s"}</div>
+          <div className="sub">Session {dayId} · {combined.length} exercise{combined.length === 1 ? "" : "s"}</div>
+          <div className="sub">Logging for {keyToDate(sessionDateKey(active)).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</div>
         </div>
       </div>
 
@@ -1524,7 +1706,7 @@ function WorkoutView({ day, dayId, active, onStart, onOpenExercise, finishWorkou
         const complete = workingCount >= exDef.sets;
         const isExtra = i >= day.exercises.length;
         return (
-          <div key={exDef.id} className="ex-row" onClick={() => onOpenExercise(i)}>
+          <div key={exDef.id} className="ex-row" role="button" tabIndex={0} aria-label={`Open ${exDef.name}`} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenExercise(i); } }} onClick={() => onOpenExercise(i)}>
             <div className="idx">{isExtra ? <Plus size={13} /> : i + 1}</div>
             <div className="info">
               <div className="nm">{exDef.name}{exDef.swapped && <span className="pill" style={{ marginLeft: 6 }}>swapped</span>}</div>
@@ -1561,12 +1743,10 @@ function WorkoutView({ day, dayId, active, onStart, onOpenExercise, finishWorkou
       {day.finisher && <Card title="Finisher" sub="cardio"><p style={{ fontSize: 13, color: "var(--dim)", margin: 0 }}>{day.finisher}</p></Card>}
       {day.conditioning && <ConditioningPanel condPlayer={condPlayer} setCondPlayer={setCondPlayer} blocks={day.conditioning} />}
 
-      {doneCount > 0 && (
         <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
           <button className="ghost-btn" onClick={discardWorkout}><RotateCcw size={14} /> Discard</button>
-          <button className="ghost-btn" onClick={finishWorkout}><Check size={14} /> Finish</button>
+          <button className="ghost-btn" disabled={doneCount === 0} onClick={finishWorkout}><Check size={14} /> Finish</button>
         </div>
-      )}
       <button className="gold-btn" onClick={onStart}><Play size={16} /> {doneCount > 0 ? "CONTINUE WORKOUT" : "START WORKOUT"}</button>
     </>
   );
@@ -1663,7 +1843,7 @@ function ExerciseDetailView({ exDef, day, active, addSet, updateSet, removeSet, 
   return (
     <div className="gu-body" style={{ paddingTop: 16 }}>
       <div className="topbar" style={{ padding: "0 0 12px" }}>
-        <button className="icon-btn" onClick={onBack}><ChevronLeft size={18} /></button>
+        <button className="icon-btn" aria-label="Back to workout" onClick={onBack}><ChevronLeft size={18} /></button>
         <span className="t" style={{ fontSize: 14 }}>Exercise Detail</span>
         {isExtra ? (
           <button className="icon-btn" onClick={onRemoveExtra} title="Remove this extra exercise"><X size={16} /></button>
@@ -1884,10 +2064,10 @@ function volumeForSessions(sessionList, program) {
   const totals = {};
   Object.keys(MUSCLES).forEach((m) => (totals[m] = 0));
   sessionList.forEach((s) => {
-    const day = program[s.dayId];
+    const day = s.template || program[s.dayId];
     if (!day || !day.exercises) return;
     Object.entries(s.entries || {}).forEach(([exId, data]) => {
-      const exDef = day.exercises.find((e) => e.id === exId);
+      const exDef = [...day.exercises, ...(s.extras || [])].find((e) => e.id === exId);
       if (!exDef) return;
       (data.sets || []).forEach((set) => {
         const st = SET_TYPES.find((t) => t.key === set.type) || SET_TYPES[1];
@@ -1900,100 +2080,89 @@ function volumeForSessions(sessionList, program) {
   return totals;
 }
 
-function DayDetail({ dateStr, sessions, program }) {
-  const d = keyToDate(dateStr);
-  const scheduledId = ((d.getDay() + 6) % 7) + 1;
-  const scheduled = program[scheduledId];
-  const daySessions = sessions.filter((s) => dateKey(new Date(s.date)) === dateStr);
-  const dur = (s) => {
-    const all = Object.values(s.entries || {}).flatMap((d2) => (d2.sets || []).map((x) => x.ts).filter(Boolean));
-    if (all.length < 2) return null;
-    const sorted = all.map((t) => new Date(t).getTime()).sort((a, b) => a - b);
-    return fmtDuration((sorted[sorted.length - 1] - sorted[0]) / 60000);
-  };
-  return (
-    <div className="day-summary">
-      <div className="icon-circle"><BatIcon size={18} color="var(--gold)" /></div>
-      <div className="info">
-        <div className="d">{d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</div>
-        {!daySessions.length ? (
-          <div className="nm" style={{ color: "var(--dim)" }}>Nothing logged · scheduled: {scheduled.name}</div>
-        ) : daySessions.map((s) => {
-          const day = program[s.dayId];
-          const setCount = Object.values(s.entries || {}).reduce((n, d2) => n + (d2.sets || []).length, 0);
-          const d2 = dur(s);
-          return (
-            <div key={s.id} style={{ marginBottom: 4 }}>
-              <div className="nm">{day.name}</div>
-              <div className="sub">{day.exercises ? `${day.exercises.length} exercises` : "Recovery"}{setCount ? ` · ${setCount} sets` : ""}{d2 ? ` · ${d2}` : ""}</div>
-            </div>
-          );
-        })}
-      </div>
-      <ChevronRight size={16} color="var(--dim)" />
-    </div>
-  );
-}
+const CALENDAR_DATE_LABEL = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+const LOG_STATUS_LABEL = { done: "Workout logged", rest: "Rest day logged", "active-log": "Workout in progress", "check-in": "Readiness check-in" };
 
-function CalendarPanel({ sessions, program }) {
-  const [calMonth, setCalMonth] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; });
+const DayDetail = memo(function DayDetail({ dateStr, logDay, program, onLogDate, onRemoveLog }) {
+  const records = logDay?.records || [];
+  const future = dateStr > dateKey();
+  return <div className="day-detail">
+    <h3>{keyToDate(dateStr).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</h3>
+    {!records.length && <p className="helper-text">{future ? "Choose today or a past date to log a day." : "Nothing logged. This date is not automatically a workout or rest day."}</p>}
+    {records.map(session => {
+      const kind = sessionKind(session, program);
+      const title = sessionTitle(session, program);
+      const setCount = Object.values(session.entries || {}).reduce((count, entry) => count + (entry?.sets || []).length, 0);
+      const minutes = sessionDuration(session);
+      return <div className="logged-session" key={session.id}>
+        <div className="info"><div className="nm">{title}</div>
+          <div className="sub">{session.inProgress ? "In progress" : kind === "rest" ? "Rest logged" : kind === "check-in" ? "Check-in only" : session.manualLog ? "Completed · no sets recorded" : "Completed"}{setCount ? ` · ${setCount} sets` : ""}{minutes ? ` · ${fmtDuration(minutes)}` : ""}</div>
+          {session.notes && <p className="log-notes">{session.notes}</p>}
+        </div>
+        {!session.inProgress && <button className="icon-btn" aria-label={`Remove ${title} log`} onClick={() => onRemoveLog(session.id)}><X size={16} /></button>}
+      </div>;
+    })}
+    <button className="gold-btn" disabled={future} onClick={() => onLogDate(dateStr)}><Plus size={17} /> Log workout / rest day</button>
+  </div>;
+});
+
+const CalendarPanel = memo(function CalendarPanel({ logIndex, program, onLogDate, onRemoveLog }) {
+  const [calMonth, setCalMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(dateKey());
-
   const year = calMonth.getFullYear(), month = calMonth.getMonth();
-  const firstDay = new Date(year, month, 1);
-  const startOffset = (firstDay.getDay() + 6) % 7;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const todayKey = dateKey(new Date());
-
-  const cells = [];
-  for (let i = 0; i < startOffset; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
-
-  const statusFor = (date) => {
-    const k = dateKey(date);
-    const scheduledId = ((date.getDay() + 6) % 7) + 1;
-    const scheduled = program[scheduledId];
-    const has = sessions.some((s) => dateKey(new Date(s.date)) === k);
-    if (has) return "done";
-    if (scheduled.rest) return "rest";
-    if (k < todayKey) return "missed";
-    return "";
+  const todayKey = dateKey();
+  const cells = useMemo(() => {
+    const offset = (new Date(year, month, 1).getDay() + 6) % 7;
+    const result = Array(offset).fill(null);
+    for (let number = 1; number <= new Date(year, month + 1, 0).getDate(); number++) {
+      const date = new Date(year, month, number);
+      result.push({ number, key: dateKey(date), label: CALENDAR_DATE_LABEL.format(date) });
+    }
+    return result;
+  }, [year, month]);
+  const counts = useMemo(() => {
+    const prefix = `${year}-${pad2(month + 1)}-`;
+    let workouts = 0, rest = 0;
+    for (const [key, value] of logIndex) {
+      if (!key.startsWith(prefix)) continue;
+      workouts += value.workouts;
+      if (value.rest && !value.workouts && !value.inProgress) rest++;
+    }
+    return { workouts, rest };
+  }, [logIndex, year, month]);
+  const moveMonth = delta => {
+    const next = new Date(year, month + delta, 1);
+    setCalMonth(next); setSelectedDate(dateKey(next));
   };
+  return <Card title="Training Calendar" className="calendar-card">
+    <p className="helper-text calendar-intro">Only the days you log count. Tap a date to add or edit a workout or rest day.</p>
+    <div className="period-nav">
+      <button className="icon-btn" aria-label="Previous month" onClick={() => moveMonth(-1)}><ChevronLeft size={20} /></button>
+      <span>{calMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</span>
+      <button className="icon-btn" aria-label="Next month" onClick={() => moveMonth(1)}><ChevronRight size={20} /></button>
+    </div>
+    <div className="calendar-summary">{counts.workouts} workout{counts.workouts !== 1 ? "s" : ""} · {counts.rest} rest day{counts.rest !== 1 ? "s" : ""}</div>
+    <div className="cal-grid">
+      {["M", "T", "W", "T", "F", "S", "S"].map((label, index) => <div key={index} className="cal-dow">{label}</div>)}
+      {cells.map((cell, index) => {
+        if (!cell) return <div key={`empty-${index}`} />;
+        const status = logIndex.get(cell.key)?.status || "";
+        return <button key={cell.key} className={`cal-cell ${status} ${cell.key === selectedDate ? "sel" : ""} ${cell.key === todayKey ? "today" : ""}`}
+          aria-label={`${cell.label}: ${LOG_STATUS_LABEL[status] || "Not logged"}`}
+          aria-pressed={cell.key === selectedDate} aria-current={cell.key === todayKey ? "date" : undefined}
+          onClick={() => setSelectedDate(cell.key)}>{cell.number}<span className="dot" /></button>;
+      })}
+    </div>
+    <div className="cal-legend"><span><i className="dot done" /> Workout</span><span><i className="dot rest" /> Rest</span><span><i className="dot check-in" /> Check-in</span></div>
+    <DayDetail dateStr={selectedDate} logDay={logIndex.get(selectedDate)} program={program} onLogDate={onLogDate} onRemoveLog={onRemoveLog} />
+  </Card>;
+});
 
-  return (
-    <Card title="Training Calendar">
-      <div className="period-nav" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <button className="icon-btn" onClick={() => setCalMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}><ChevronLeft size={14} /></button>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>{calMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</span>
-        <button className="icon-btn" onClick={() => setCalMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}><ChevronRight size={14} /></button>
-      </div>
-      <div className="cal-grid">
-        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => <div key={i} className="cal-dow">{d}</div>)}
-        {cells.map((date, i) =>
-          date ? (
-            <button key={i} className={`cal-cell ${statusFor(date)} ${dateKey(date) === selectedDate ? "sel" : ""} ${dateKey(date) === todayKey ? "today" : ""}`}
-              onClick={() => setSelectedDate(dateKey(date))}>
-              {date.getDate()}
-              <span className="dot" />
-            </button>
-          ) : <div key={i} />
-        )}
-      </div>
-      <div className="cal-legend">
-        <span><i className="dot done" /> Workout</span>
-        <span><i className="dot missed" /> Missed</span>
-        <span><i className="dot rest" /> Rest</span>
-      </div>
-      {selectedDate && <DayDetail dateStr={selectedDate} sessions={sessions} program={program} />}
-    </Card>
-  );
-}
-
-function StrengthTab({ sessions, program, prLog }) {
+function StrengthTab({ sessions, program, prLog, units }) {
   const rows = useMemo(() => {
     const byExercise = {};
     sessions.slice().sort((a, b) => new Date(a.date) - new Date(b.date)).forEach((s) => {
-      const day = program[s.dayId];
+      const day = s.template || program[s.dayId];
       if (!day || !day.exercises) return;
       Object.entries(s.entries || {}).forEach(([exId, data]) => {
         const exDef = day.exercises.find((e) => e.id === exId);
@@ -2015,7 +2184,7 @@ function StrengthTab({ sessions, program, prLog }) {
       .filter((e) => e.sessions >= 2)
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 6);
-  }, [sessions]);
+  }, [sessions, program]);
 
   return (
     <Card title="Strength" sub="est. 1RM change">
@@ -2023,7 +2192,7 @@ function StrengthTab({ sessions, program, prLog }) {
       {rows.map((r) => (
         <div className="strength-row" key={r.name}>
           <div className="icon-circle" style={{ background: "var(--card2)", color: "var(--gold)", width: 34, height: 34 }}><Dumbbell size={15} /></div>
-          <div className="info"><div className="nm">{r.name}</div><div className="sub">{r.weight} lb × {r.reps}</div></div>
+          <div className="info"><div className="nm">{r.name}</div><div className="sub">{fmtWeight(r.weight, units)} {weightUnitLabel(units)} × {r.reps}</div></div>
           <div className={`pct ${r.pct > 1 ? "up" : r.pct < -1 ? "down" : "flat"}`}>
             {r.pct > 1 && <TrendingUpIcon size={14} />}{r.pct < -1 && <Minus size={14} />}
             {r.pct > 0 ? "+" : ""}{r.pct.toFixed(1)}%
@@ -2035,7 +2204,8 @@ function StrengthTab({ sessions, program, prLog }) {
 }
 
 function VolumeTab({ sessions, program }) {
-  const totals = useMemo(() => volumeForSessions(sessions.filter((s) => { const wk = isoWeek(new Date(s.date)); return wk === isoWeek(new Date()); }), program), [sessions, program]);
+  const currentWeek = isoWeek(new Date());
+  const totals = useMemo(() => volumeForSessions(sessions.filter((s) => sessionKind(s, program) === "workout" && validLogDate(sessionDateKey(s)) && isoWeek(keyToDate(sessionDateKey(s))) === currentWeek), program), [sessions, program, currentWeek]);
   return (
     <Card title="Muscle Workload" sub="this week vs target">
       {Object.entries(MUSCLES).map(([key, m]) => {
@@ -2068,8 +2238,8 @@ function BodyTab({ measurements, addMeasurement, photoIndex, addPhoto, deletePho
     addMeasurement(clean);
     setForm({});
   };
-  const sorted = measurements.slice().sort((a, b) => new Date(a.date) - new Date(b.date));
-  const weightSeries = sorted.filter((m) => m.weight != null).slice(-12).map((m) => ({ date: new Date(m.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }), kg: Math.round(fmtWeight(m.weight, units) * 10) / 10 }));
+  const sorted = useMemo(() => measurements.slice().sort((a, b) => new Date(a.date) - new Date(b.date)), [measurements]);
+  const weightSeries = useMemo(() => sorted.filter((m) => m.weight != null && Number.isFinite(Number(m.weight))).slice(-12).map((m) => ({ date: new Date(m.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }), kg: Math.round(fmtWeight(m.weight, units) * 10) / 10 })), [sorted, units]);
   const latestW = weightSeries[weightSeries.length - 1];
   const prevW = weightSeries[weightSeries.length - 2];
 
@@ -2081,16 +2251,7 @@ function BodyTab({ measurements, addMeasurement, photoIndex, addPhoto, deletePho
           {prevW && <div style={{ fontSize: 12, color: latestW.kg < prevW.kg ? "var(--green)" : latestW.kg > prevW.kg ? "var(--red)" : "var(--dim)", marginBottom: 8 }}>
             {latestW.kg < prevW.kg ? "↓" : latestW.kg > prevW.kg ? "↑" : "→"} {Math.abs(Math.round((latestW.kg - prevW.kg) * 10) / 10)} {weightUnitLabel(units)} since last log
           </div>}
-          <div style={{ height: 140, marginTop: 6 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={weightSeries} margin={{ top: 6, right: 6, left: -24, bottom: 0 }}>
-                <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#8b8d97" }} axisLine={false} tickLine={false} />
-                <YAxis domain={["auto", "auto"]} tick={{ fontSize: 9, fill: "#8b8d97" }} axisLine={false} tickLine={false} width={30} />
-                <Tooltip contentStyle={{ background: "#191c23", border: "1px solid #262932", borderRadius: 10, fontSize: 11 }} />
-                <Line type="monotone" dataKey="kg" stroke="#f0b429" strokeWidth={2} dot={{ r: 2.5, fill: "#f0b429" }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <WeightTrend data={weightSeries} unit={weightUnitLabel(units)} />
         </Card>
       )}
 
@@ -2185,8 +2346,8 @@ function PhotosPanel({ photoIndex, addPhoto, deletePhoto }) {
   );
 }
 
-function ProgressView({ subtab, setSubtab, sessions, active, measurements, addMeasurement, photoIndex, addPhoto, deletePhoto, profile, program, prLog }) {
-  const pool = active ? [...sessions, active] : sessions;
+function ProgressView({ subtab, setSubtab, sessions, active, measurements, addMeasurement, photoIndex, addPhoto, deletePhoto, profile, program, prLog, logIndex, onLogDate, onRemoveLog }) {
+  const pool = useMemo(() => active ? [...sessions.filter(session => session.id !== active.id), active] : sessions, [sessions, active]);
   return (
     <>
       <div className="subtabs">
@@ -2194,8 +2355,8 @@ function ProgressView({ subtab, setSubtab, sessions, active, measurements, addMe
           <button key={t} className={`subtab ${subtab === t ? "on" : ""}`} onClick={() => setSubtab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>
         ))}
       </div>
-      {subtab === "overview" && <CalendarPanel sessions={pool} program={program} />}
-      {subtab === "strength" && <StrengthTab sessions={pool} program={program} prLog={prLog} />}
+      {subtab === "overview" && <CalendarPanel logIndex={logIndex} program={program} onLogDate={onLogDate} onRemoveLog={onRemoveLog} />}
+      {subtab === "strength" && <StrengthTab sessions={pool} program={program} prLog={prLog} units={profile.units} />}
       {subtab === "volume" && <VolumeTab sessions={pool} program={program} />}
       {subtab === "body" && <BodyTab measurements={measurements} addMeasurement={addMeasurement} photoIndex={photoIndex} addPhoto={addPhoto} deletePhoto={deletePhoto} profile={profile} />}
     </>
@@ -2532,25 +2693,26 @@ function MoreView({ profile, updateProfile, nutrition, updateNutritionSettings, 
   const toggle = (k) => setOpen((o) => (o === k ? null : k));
   const units = profile.units;
 
-  const trainingSessions = sessions.filter((s) => program[s.dayId] && program[s.dayId].exercises);
+  const trainingSessions = useMemo(() => sessions.filter((s) => sessionKind(s, program) === "workout"), [sessions, program]);
   const totalVolume = trainingSessions.reduce((sum, s) => {
     let vl = 0;
     Object.values(s.entries || {}).forEach((d) => (d.sets || []).forEach((set) => { if (set.type !== "W" && set.weight) vl += volumeLoad(set.weight, set.reps); }));
     return sum + vl;
   }, 0);
   const streak = useMemo(() => {
-    const dates = new Set(sessions.map((s) => dateKey(new Date(s.date))));
+    const dates = new Set(sessions.map(sessionDateKey).filter(Boolean));
     let cursor = new Date(); cursor.setHours(0, 0, 0, 0);
     if (!dates.has(dateKey(cursor))) cursor.setDate(cursor.getDate() - 1);
     let n = 0; while (dates.has(dateKey(cursor))) { n++; cursor.setDate(cursor.getDate() - 1); }
     return n;
   }, [sessions]);
   const longestStreak = useMemo(() => {
-    const dates = Array.from(new Set(sessions.map((s) => dateKey(new Date(s.date))))).sort();
+    const dates = Array.from(new Set(sessions.map(sessionDateKey).filter(Boolean))).sort();
     let best = 0, cur = 0, prev = null;
     dates.forEach((k) => {
       const d = keyToDate(k);
-      if (prev && (d - prev) / 86400000 === 1) cur++; else cur = 1;
+      const following = prev && new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + 1);
+      if (following && dateKey(following) === k) cur++; else cur = 1;
       best = Math.max(best, cur); prev = d;
     });
     return best;
