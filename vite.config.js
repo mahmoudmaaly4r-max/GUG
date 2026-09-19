@@ -48,6 +48,9 @@ export default defineConfig({
             handler: "NetworkFirst",
             options: {
               cacheName: "gotham-pages",
+              // NetworkFirst must also bypass the browser's HTTP cache, which
+              // can otherwise return old HTML after a service-worker update.
+              fetchOptions: { cache: "no-store" },
               networkTimeoutSeconds: 4,
               cacheableResponse: { statuses: [200] },
               expiration: { maxEntries: 4 },
