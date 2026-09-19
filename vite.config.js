@@ -1,6 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+
+const updateScriptHash = createHash("sha256").update(readFileSync(new URL("./app/public/release-update.js", import.meta.url))).digest("hex").slice(0, 12);
 
 // base: "./" (relative) so the built app works no matter where it's hosted —
 // domain root or a GitHub Pages project subpath.
@@ -31,7 +35,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
-        importScripts: ["./release-update.js"],
+        importScripts: [`./release-update.js?v=${updateScriptHash}`],
         // Fetch the current HTML on launch; keep the precached index as an
         // offline fallback. Avoid serving an old index for every navigation.
         directoryIndex: null,
