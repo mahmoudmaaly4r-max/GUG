@@ -159,7 +159,7 @@ test("past workouts accept direct sets, can be edited, and leave an active worko
   await launch(); await write("activeSession", active);
   cleanup(); render(React.createElement(App)); await screen.findByRole("button", { name: "CONTINUE WORKOUT" });
   await user.click(screen.getByRole("button", { name: "Add past workout", exact: true }));
-  fireEvent.change(screen.getByLabelText("Workout date"), { target: { value: "2020-06-13" } });
+  fireEvent.input(screen.getByLabelText("Workout date"), { target: { value: "2020-06-13" } });
   await user.selectOptions(screen.getByLabelText("Workout template"), "1");
   await user.selectOptions(screen.getByLabelText("Exercise to add"), "d1e1");
   await user.click(screen.getByRole("button", { name: "Add exercise", exact: true }));
@@ -186,7 +186,7 @@ test("body progress can be entered years before installation and remains ordered
   await write("measurements", [{ id: "later", date: "2021-06-01T12:00:00", weight: 180 }]);
   await launch(); await user.click(screen.getByRole("button", { name: "Progress", exact: true }));
   await user.click(screen.getByRole("button", { name: "Body", exact: true }));
-  fireEvent.change(screen.getByLabelText("Measurement date"), { target: { value: "2020-06-13" } });
+  fireEvent.input(screen.getByLabelText("Measurement date"), { target: { value: "2020-06-13" } });
   await user.type(screen.getByLabelText("Weight measurement"), "200");
   await user.click(screen.getByRole("button", { name: "Log Measurements" }));
   await waitFor(async () => assert.equal((await read("measurements")).length, 2));

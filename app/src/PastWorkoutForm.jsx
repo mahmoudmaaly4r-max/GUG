@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import DateInput from "./DateInput.jsx";
 import { makeCompletedWorkout, localDateKey, sessionDateKey, sessionTitle, validLogDate } from "./training-log.js";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -47,7 +48,7 @@ export default function PastWorkoutForm({ initial, program, profile, muscles, on
   };
   return <form className="past-workout-form" onSubmit={submit}>
     <p className="helper-text">Enter what you actually did, even years before you installed the app. This saves a completed workout without starting a live session.</p>
-    <label className="form-label">Workout date<input className="gu-input" type="date" required max={localDateKey()} value={date} onChange={event => setDate(event.target.value)} /></label>
+    <label className="form-label">Workout date<DateInput className="gu-input" required max={localDateKey()} value={date} onChange={event => setDate(event.target.value)} /></label>
     <label className="form-label">Workout template<select className="rir-select" value={dayId} onChange={event => { const id = event.target.value; setDayId(id); if (program[id]) setName(program[id].name); }}>
       <option value="custom">Custom workout</option>{Object.entries(program).filter(([, day]) => day.exercises).map(([id, day]) => <option key={id} value={id}>{day.name}</option>)}
       {existing && !program[dayId] && dayId !== "custom" && <option value={dayId}>Saved workout</option>}

@@ -10,6 +10,7 @@ import WeightTrend from "./WeightTrend.jsx";
 import DayTypeControl from "./DayTypeControl.jsx";
 import PastWorkoutForm from "./PastWorkoutForm.jsx";
 import { APP_VERSION } from "./version.js";
+import DateInput from "./DateInput.jsx";
 import { sessionDateKey, sessionKind, sessionTitle, indexTrainingLog, makeTrainingEntry, upsertDailyLog, withDailyReadiness, sessionDuration, validLogDate, updateDayChoice, datedTimestamp } from "./training-log.js";
 
 /* ---------------------------------------------------------------------- */
@@ -1557,7 +1558,7 @@ function DayLogModal({ initial, program, active, logIndex, onSave, onStart, onRe
   };
   return <Sheet title="Log your day" onClose={() => !saving && onClose()}>
     <form onSubmit={save}>
-      <label className="form-label">Log date<input className="gu-input" type="date" value={date} max={dateKey()} required onChange={event => setDate(event.target.value)} /></label>
+      <label className="form-label">Log date<DateInput className="gu-input" value={date} max={dateKey()} required onChange={event => setDate(event.target.value)} /></label>
       <div className="log-toggle" aria-label="Day type">
         <button type="button" className={kind === "workout" ? "selected" : ""} aria-pressed={kind === "workout"} onClick={() => setKind("workout")}><Dumbbell size={17} /> Workout</button>
         <button type="button" className={kind === "rest" ? "selected" : ""} aria-pressed={kind === "rest"} onClick={() => setKind("rest")}><Pause size={17} /> Rest day</button>
@@ -1717,7 +1718,7 @@ function ProgramView({ logIndex, active, openDay, program, chooseDay, setDayType
     <div className="today-card">
       <div className="lbl">YOUR SCHEDULE</div><div className="nm">You choose which days to train.</div>
       <p className="helper-text">Pick the date you trained, then choose any session. Saturday can be a workout; Monday can be rest.</p>
-      <label className="form-label">Training date<input type="date" className="gu-input" value={selectedDate} onChange={event => setSelectedDate(event.target.value)} /></label>
+      <label className="form-label">Training date<DateInput className="gu-input" value={selectedDate} onChange={event => setSelectedDate(event.target.value)} /></label>
       <DayTypeControl date={selectedDate} value={logIndex.get(selectedDate)?.dayType} onChange={setDayType} />
       <p className="helper-text">Plan future days here too. Record completed workouts for today or any past date.</p>
     </div>
@@ -2218,7 +2219,7 @@ const CalendarPanel = memo(function CalendarPanel({ logIndex, program, onLogDate
   };
   return <Card title="Training Calendar" className="calendar-card">
     <p className="helper-text calendar-intro">No fixed workout or rest days. Pick any date, then choose its type. You can enter workouts from before you started using the app.</p>
-    <label className="form-label">Go to date<input className="gu-input" type="date" value={selectedDate} onChange={event => { const key = event.target.value; if (validLogDate(key)) { const date = keyToDate(key); setSelectedDate(key); setCalMonth(new Date(date.getFullYear(), date.getMonth(), 1)); } }} /></label>
+    <label className="form-label">Go to date<DateInput className="gu-input" value={selectedDate} onChange={event => { const key = event.target.value; if (validLogDate(key)) { const date = keyToDate(key); setSelectedDate(key); setCalMonth(new Date(date.getFullYear(), date.getMonth(), 1)); } }} /></label>
     <button className="ghost-btn" onClick={() => openPastWorkout()}>Add past workout</button>
     <div className="period-nav">
       <button className="icon-btn" aria-label="Previous month" onClick={() => moveMonth(-1)}><ChevronLeft size={20} /></button>
@@ -2293,7 +2294,7 @@ function VolumeTab({ sessions, program }) {
   const totals = useMemo(() => volumeForSessions(sessions.filter((s) => sessionKind(s, program) === "workout" && validLogDate(sessionDateKey(s)) && isoWeek(keyToDate(sessionDateKey(s))) === currentWeek), program), [sessions, program, currentWeek]);
   return (
     <Card title="Muscle Workload" sub="selected week vs target">
-      <label className="form-label">Week containing<input className="gu-input" type="date" value={weekDate} max={dateKey()} onChange={event => { if (validLogDate(event.target.value)) setWeekDate(event.target.value); }} /></label>
+      <label className="form-label">Week containing<DateInput className="gu-input" value={weekDate} max={dateKey()} onChange={event => { if (validLogDate(event.target.value)) setWeekDate(event.target.value); }} /></label>
       {Object.entries(MUSCLES).map(([key, m]) => {
         const val = Math.round((totals[key] || 0) * 10) / 10;
         const pct = Math.min(100, (val / m.max) * 100);
@@ -2354,7 +2355,7 @@ function BodyTab({ measurements, addMeasurement, photoIndex, addPhoto, deletePho
 
       <Card title="Body Measurements" sub={units === "metric" ? "kg / cm" : "lb / in"}>
         <p className="helper-text">Add today's measurements or enter older progress from before you used the app.</p>
-        <label className="form-label">Measurement date<input className="gu-input" type="date" max={dateKey()} value={measurementDate} onChange={event => setMeasurementDate(event.target.value)} /></label>
+        <label className="form-label">Measurement date<DateInput className="gu-input" max={dateKey()} value={measurementDate} onChange={event => setMeasurementDate(event.target.value)} /></label>
         <div className="measure-grid">
           {MEASURE_FIELDS.map(({ key, label, kind }) => (
             <div className="cell" key={key}>
@@ -2420,7 +2421,7 @@ function PhotosPanel({ photoIndex, addPhoto, deletePhoto }) {
 
   return (
     <Card title="Progress Photos" sub={keyToDate(`${mk}-01`).toLocaleDateString(undefined, { month: "long", year: "numeric" })}>
-      <label className="form-label">Photo date<input className="gu-input" type="date" max={dateKey()} value={photoDate} disabled={busy} onChange={event => setPhotoDate(event.target.value)} /></label>
+      <label className="form-label">Photo date<DateInput className="gu-input" max={dateKey()} value={photoDate} disabled={busy} onChange={event => setPhotoDate(event.target.value)} /></label>
       <p className="helper-text">Choose when the photo was taken, then add it from your photo library.</p>
       <input ref={inputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFile} />
       {error && <p className="form-error" role="alert">{error}</p>}
