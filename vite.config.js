@@ -3,8 +3,10 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 // base: "./" (relative) so the built app works no matter where it's hosted —
-// domain root, a GitHub Pages project subpath, a Netlify preview URL, or opened locally.
+// domain root or a GitHub Pages project subpath.
 export default defineConfig({
+  root: "app",
+  build: { outDir: "../dist", emptyOutDir: true },
   base: "./",
   plugins: [
     react(),
