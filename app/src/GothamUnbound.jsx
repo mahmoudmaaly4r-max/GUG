@@ -7,7 +7,10 @@ import {
   RotateCcw, Bell as BellIcon, BellOff, Bookmark, ArrowLeftRight, Trophy, ArrowUp, ArrowDown,
 } from "lucide-react";
 import WeightTrend from "./WeightTrend.jsx";
-import { sessionDateKey, sessionKind, sessionTitle, indexTrainingLog, makeTrainingEntry, upsertDailyLog, withDailyReadiness, sessionDuration, validLogDate } from "./training-log.js";
+import DayTypeControl from "./DayTypeControl.jsx";
+import PastWorkoutForm from "./PastWorkoutForm.jsx";
+import { APP_VERSION } from "./version.js";
+import { sessionDateKey, sessionKind, sessionTitle, indexTrainingLog, makeTrainingEntry, upsertDailyLog, withDailyReadiness, sessionDuration, validLogDate, updateDayChoice, datedTimestamp } from "./training-log.js";
 
 /* ---------------------------------------------------------------------- */
 /*  PROGRAM DATA                                                           */
@@ -685,6 +688,27 @@ textarea.gu-input{ text-align:left; resize:vertical; }
 .logged-session .sub{ color:var(--dim); font-size:12px; line-height:1.5; margin-top:4px; }
 .log-notes{ font-size:12px; color:var(--dim); white-space:pre-wrap; overflow-wrap:anywhere; margin:6px 0 0; }
 .weight-trend{ display:block; width:100%; height:auto; margin-top:8px; }
+.day-type-control{ margin:16px 0; }
+.day-type-options{ display:grid; grid-template-columns:1fr 1fr .8fr; gap:6px; }
+.day-type-options button{ min-height:48px; padding:8px 5px; border:1px solid var(--line); border-radius:12px; background:var(--card2); color:var(--dim); font-size:13px; }
+.day-type-options button[aria-pressed=true]{ border-color:var(--gold); background:var(--gold-soft); color:var(--gold); }
+.day-type-options button:nth-child(2)[aria-pressed=true]{ border-color:#91c9f3; background:rgba(79,163,224,.12); color:#91c9f3; }
+.cal-cell.workout-day{ color:var(--gold); border:1px dashed var(--gold-dim); }
+.cal-cell.workout-day .dot,.cal-legend .dot.workout-day{ border:1px solid var(--gold); background:transparent; }
+.period-nav{ margin-top:16px; }
+.history-exercise{ min-width:0; margin:18px 0; padding:12px; border:1px solid var(--line); border-radius:14px; }
+.history-exercise legend{ color:var(--dim); font-size:12px; padding:0 6px; }
+.history-exercise-heading,.history-set-heading{ display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:14px; margin-bottom:8px; }
+.history-exercise-heading strong{ overflow-wrap:anywhere; }
+.history-set{ border-top:1px solid var(--line); padding-top:8px; margin:12px 0; }
+.history-set-fields{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.history-set-fields>.form-label:last-child{ grid-column:1/-1; }
+.history-set-fields .form-label{ margin-bottom:4px; }
+.history-set-fields input,.history-set-fields select{ min-width:0; width:100%; }
+.history-notes{ margin-top:18px; }
+.recorded-sets{ font-size:12px; line-height:1.6; margin-top:10px; }
+.recorded-sets summary{ min-height:44px; display:flex; align-items:center; cursor:pointer; color:var(--gold); }
+.recorded-sets ul{ margin:4px 0 12px; padding-left:18px; }
 .save-notice{ position:fixed; bottom:calc(78px + env(safe-area-inset-bottom,0px)); left:50%; transform:translateX(-50%); width:calc(100% - 32px); max-width:448px; border:1px solid var(--gold-dim); border-radius:14px; padding:13px 16px; background:#242015; color:#ffe09a; font-size:13px; line-height:1.5; z-index:100; box-shadow:0 4px 20px rgba(0,0,0,.25); }
 .floating-timer{ bottom:calc(84px + env(safe-area-inset-bottom,0px)) !important; }
 .pr-banner{ top:calc(14px + env(safe-area-inset-top,0px)) !important; }
@@ -842,6 +866,7 @@ function GothamSkyline({ opacityBuildings = 0.9 }) {
 export default function GothamUnbound() {
   const [ready, setReady] = useState(false);
   const [sessions, setSessions] = useState([]);
+  const [dayChoices, setDayChoices] = useState({});
   const [active, setActive] = useState(null);
   const [nutrition, setNutrition] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -860,8 +885,15 @@ export default function GothamUnbound() {
   const [progressSubtab, setProgressSubtab] = useState("overview");
   const [showReadiness, setShowReadiness] = useState(false);
   const [dayLog, setDayLog] = useState(null);
+  const [pastWorkout, setPastWorkout] = useState(null);
   const [notice, setNotice] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [updateReady, setUpdateReady] = useState(false);
+  useEffect(() => {
+    const ready = () => setUpdateReady(true);
+    window.addEventListener("app-update-ready", ready);
+    return () => window.removeEventListener("app-update-ready", ready);
+  }, []);
 
   const [timer, setTimer] = useState(null);
   const [condPlayer, setCondPlayer] = useState(null);
@@ -871,12 +903,13 @@ export default function GothamUnbound() {
 
   useEffect(() => {
     (async () => {
-      const [s, a, n, p, m, pi, qf, cp, pl] = await Promise.all([
+      const [s, a, n, p, m, pi, qf, cp, pl, dc] = await Promise.all([
         storageGet("sessions"), storageGet("activeSession"), storageGet("nutrition"),
         storageGet("profile"), storageGet("measurements"), storageGet("photoIndex"), storageGet("quickFoods"),
-        storageGet("customProgram"), storageGet("prLog"),
+        storageGet("customProgram"), storageGet("prLog"), storageGet("dayChoices"),
       ]);
       setSessions(Array.isArray(s) ? s : []);
+      setDayChoices(dc && typeof dc === "object" && !Array.isArray(dc) ? dc : {});
       setActive(a || null);
       setNutrition(n && n.settings ? n : { settings: { reminderEnabled: true, reminderMinutes: 60 }, days: {}, lastHydrationTs: null, snoozeUntil: null });
       setProfile(
@@ -907,14 +940,26 @@ export default function GothamUnbound() {
   const persistActive = useCallback((next) => { setActive(next); storageSet("activeSession", next); }, []);
   const persistNutrition = useCallback((next) => { setNutrition(next); storageSet("nutrition", next); }, []);
   const persistProfile = useCallback((next) => { setProfile(next); storageSet("profile", next); }, []);
-  const persistMeasurements = useCallback((next) => { setMeasurements(next); storageSet("measurements", next); }, []);
+  const persistMeasurements = useCallback(async (next) => {
+    if (!await storageSet("measurements", next)) { setSaveError("Measurements could not be saved. Please try again."); return false; }
+    setMeasurements(next); setSaveError(""); return true;
+  }, []);
   const persistPhotoIndex = useCallback((next) => { setPhotoIndex(next); storageSet("photoIndex", next); }, []);
   const persistQuickFoods = useCallback((next) => { setQuickFoods(next); storageSet("quickFoods", next); }, []);
   const persistProgram = useCallback((next) => { setProgram(next); storageSet("customProgram", next); }, []);
   const persistPrLog = useCallback((next) => { setPrLog(next); storageSet("prLog", next); }, []);
 
-  const logIndex = useMemo(() => indexTrainingLog(sessions, program, active), [sessions, program, active]);
+  const logIndex = useMemo(() => indexTrainingLog(sessions, program, active, dayChoices), [sessions, program, active, dayChoices]);
   const chooseDay = useCallback((date = dateKey(), kind = "workout", dayId = 1) => setDayLog({ date, kind, dayId }), []);
+  const setDayType = useCallback(async (date, kind) => {
+    const next = updateDayChoice(dayChoices, date, kind);
+    if (!await storageSet("dayChoices", next)) { setSaveError("Your day choice could not be saved. Please try again."); return false; }
+    setDayChoices(next); setSaveError(""); return true;
+  }, [dayChoices]);
+  const openPastWorkout = useCallback((date, session = null, dayId = "custom") => {
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+    setPastWorkout({ date: date || dateKey(yesterday), session, dayId });
+  }, []);
   useEffect(() => { window.scrollTo(0, 0); }, [tab, workoutDay, exerciseIdx]);
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -1055,7 +1100,7 @@ export default function GothamUnbound() {
     if (active && (String(active.dayId) !== String(dayId) || sessionDateKey(active) !== logDate)) {
       setNotice("Resume, finish, or discard your current workout before starting another."); return false;
     }
-    if (!active) persistActive(makeTrainingEntry({ date: logDate, kind: "workout", dayId, notes, id: uid(), program }));
+    if (!active) { persistActive(makeTrainingEntry({ date: logDate, kind: "workout", dayId, notes, id: uid(), program })); setDayType(logDate, "workout"); }
     setTab("program"); setWorkoutDay(dayId); setExerciseIdx(null); setGymMode(false);
     return true;
   };
@@ -1066,11 +1111,19 @@ export default function GothamUnbound() {
   const setReadiness = (readiness) => persistActive({ ...active, readiness });
   const saveDayLog = async (entry) => {
     if (entry.kind === "workout" && sessions.some(session => sessionKind(session, program) === "workout" && sessionDateKey(session) === entry.localDate && String(session.dayId) === String(entry.dayId) && sessionTitle(session, program) === entry.workoutName)) {
+      await setDayType(entry.localDate, "workout");
       setNotice("This workout is already logged for that date."); setDayLog(null); return true;
     }
     const next = upsertDailyLog(sessions, { ...entry, manualLog: entry.kind === "workout", completedAt: new Date().toISOString() }, program);
     if (!await persistSessions(next)) return false;
+    await setDayType(entry.localDate, entry.kind);
     setDayLog(null); setNotice(`${entry.kind === "rest" ? "Rest day" : "Workout"} saved for ${keyToDate(entry.localDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}.`);
+    return true;
+  };
+  const savePastWorkout = async (entry, existing) => {
+    if (!await persistSessions([...sessions.filter(session => session.id !== entry.id), entry])) return false;
+    if (!existing || sessionDateKey(existing) !== entry.localDate) await setDayType(entry.localDate, "workout");
+    setPastWorkout(null); setNotice(`Workout saved for ${keyToDate(entry.localDate).toLocaleDateString()}.`);
     return true;
   };
   const removeLog = useCallback(async (id) => {
@@ -1150,12 +1203,19 @@ export default function GothamUnbound() {
   const startDeload = () => { const now = new Date(); const until = new Date(now.getTime() + 7 * 86400000); updateProfile({ deload: { active: true, startedAt: now.toISOString(), until: until.toISOString() } }); };
   const endDeload = () => updateProfile({ deload: { active: false, startedAt: null, until: null } });
 
-  const addMeasurement = (entry) => persistMeasurements([...measurements, { id: uid(), date: new Date().toISOString(), ...entry }]);
+  const addMeasurement = async (entry, localDate = dateKey()) => {
+    const saved = await persistMeasurements([...measurements, { ...entry, id: uid(), localDate, date: datedTimestamp(localDate) }]);
+    if (saved) setNotice(`Measurements saved for ${keyToDate(localDate).toLocaleDateString()}.`);
+    return saved;
+  };
 
-  const addPhoto = async (angle, dataUrl) => {
+  const addPhoto = async (angle, dataUrl, localDate = dateKey()) => {
+    const date = datedTimestamp(localDate);
     const id = uid();
-    await storageSet("photo:" + id, dataUrl);
-    persistPhotoIndex([...photoIndex, { id, date: new Date().toISOString(), angle, monthKey: monthKey() }]);
+    if (!await storageSet("photo:" + id, dataUrl)) throw new Error("Photo could not be saved.");
+    const next = [...photoIndex, { id, date, localDate, angle, monthKey: localDate.slice(0, 7) }];
+    if (!await storageSet("photoIndex", next)) throw new Error("Photo details could not be saved. Please try again.");
+    setPhotoIndex(next);
     return id;
   };
   const deletePhoto = async (id) => {
@@ -1226,7 +1286,7 @@ export default function GothamUnbound() {
   const exportData = async () => {
     const photos = {};
     for (const p of photoIndex) { try { photos[p.id] = await storageGet("photo:" + p.id); } catch { /* skip missing */ } }
-    const blob = { exportedAt: new Date().toISOString(), version: 1, sessions, nutrition, profile, measurements, photoIndex, quickFoods, program, prLog, photos };
+    const blob = { exportedAt: new Date().toISOString(), version: 2, sessions, dayChoices, nutrition, profile, measurements, photoIndex, quickFoods, program, prLog, photos };
     const url = "data:application/json;charset=utf-8," + encodeURIComponent(JSON.stringify(blob));
     const a = document.createElement("a");
     a.href = url; a.download = `gotham-unbound-export-${dateKey()}.json`;
@@ -1234,10 +1294,13 @@ export default function GothamUnbound() {
   };
 
   const importData = async (data) => {
-    if (Array.isArray(data.sessions)) persistSessions(data.sessions);
+    if (Array.isArray(data.sessions) && !await persistSessions(data.sessions)) return false;
+    const choices = data.dayChoices && typeof data.dayChoices === "object" && !Array.isArray(data.dayChoices) ? data.dayChoices : {};
+    if (!await storageSet("dayChoices", choices)) return false;
+    setDayChoices(choices);
     if (data.nutrition && data.nutrition.settings) persistNutrition(data.nutrition);
     if (data.profile && data.profile.units) persistProfile({ proteinGoal: 160, carbsGoal: 260, fatGoal: 70, ...data.profile });
-    if (Array.isArray(data.measurements)) persistMeasurements(data.measurements);
+    if (Array.isArray(data.measurements) && !await persistMeasurements(data.measurements)) return false;
     if (Array.isArray(data.photoIndex)) persistPhotoIndex(data.photoIndex);
     if (Array.isArray(data.quickFoods)) persistQuickFoods(data.quickFoods);
     if (data.program && data.program[1]) persistProgram(data.program);
@@ -1246,6 +1309,7 @@ export default function GothamUnbound() {
       for (const [id, dataUrl] of Object.entries(data.photos)) { if (dataUrl) await storageSet("photo:" + id, dataUrl); }
     }
     persistActive(null);
+    return true;
   };
 
   if (!ready) {
@@ -1266,6 +1330,7 @@ export default function GothamUnbound() {
       <style>{CSS}</style>
 
       {saveError && <div className="alert-banner" role="alert" style={{ margin: 12 }}>{saveError}</div>}
+      {updateReady && <div className="alert-banner" role="status" style={{ margin: 12 }}>An app update is ready.<button className="ghost-btn" onClick={() => window.location.reload()}>Load update</button></div>}
       {notice && <div className="save-notice" role="status">{notice}</div>}
 
       {hydrationAlert && (
@@ -1327,11 +1392,11 @@ export default function GothamUnbound() {
               <HomeView
                 active={active} openDay={openDay} sessions={sessions} measurements={measurements} photoIndex={photoIndex}
                 deloadSignal={deloadSignal} deloadActive={deloadActive} startDeload={startDeload} endDeload={endDeload}
-                setTab={switchTab} profile={profile} nutrition={nutrition} program={program} logIndex={logIndex} chooseDay={chooseDay}
+                setTab={switchTab} profile={profile} nutrition={nutrition} program={program} logIndex={logIndex} chooseDay={chooseDay} setDayType={setDayType} openPastWorkout={openPastWorkout}
                 readinessPct={readinessPct} readinessTier={readinessTier} onTapReadiness={() => setShowReadiness(true)}
               />
             )}
-            {tab === "program" && !workoutDay && <ProgramView logIndex={logIndex} active={active} openDay={openDay} program={program} chooseDay={chooseDay} />}
+            {tab === "program" && !workoutDay && <ProgramView logIndex={logIndex} active={active} openDay={openDay} program={program} chooseDay={chooseDay} setDayType={setDayType} openPastWorkout={openPastWorkout} />}
             {tab === "program" && workoutDay && exerciseIdx == null && (
               <WorkoutView day={day} dayId={workoutDay} active={active} onStart={() => setExerciseIdx(0)} onOpenExercise={openExercise}
                 finishWorkout={finishWorkout} discardWorkout={discardWorkout}
@@ -1342,7 +1407,7 @@ export default function GothamUnbound() {
               <ProgressView
                 subtab={progressSubtab} setSubtab={setProgressSubtab} sessions={sessions} active={active}
                 measurements={measurements} addMeasurement={addMeasurement} photoIndex={photoIndex} addPhoto={addPhoto} deletePhoto={deletePhoto} profile={profile}
-                program={program} prLog={prLog} logIndex={logIndex} onLogDate={chooseDay} onRemoveLog={removeLog}
+                program={program} prLog={prLog} logIndex={logIndex} onLogDate={chooseDay} onRemoveLog={removeLog} setDayType={setDayType} openPastWorkout={openPastWorkout}
               />
             )}
             {tab === "nutrition" && nutrition && profile && (
@@ -1387,7 +1452,11 @@ export default function GothamUnbound() {
       {dayLog && <DayLogModal initial={dayLog} program={program} active={active} logIndex={logIndex} onSave={saveDayLog}
         onStart={(entry) => { if (openDay(entry.dayId, entry.localDate, entry.notes)) setDayLog(null); }}
         onResume={() => { if (active && openDay(active.dayId, sessionDateKey(active))) setDayLog(null); }}
+        onEnterHistory={(date, dayId) => { setDayLog(null); openPastWorkout(date, null, dayId); }}
         onClose={() => setDayLog(null)} />}
+      {pastWorkout && <Sheet title={pastWorkout.session ? "Edit completed workout" : "Add past workout"} onClose={() => setPastWorkout(null)}>
+        <PastWorkoutForm initial={pastWorkout} program={program} profile={profile} muscles={MUSCLES} onSave={savePastWorkout} />
+      </Sheet>}
 
       {timer && !workoutDay && (
         <div className="alert-banner floating-timer" style={{ position: "fixed", bottom: 84, left: 8, right: 8, borderRadius: 16, background: "var(--card)", borderColor: "var(--line)", color: "var(--text)", alignItems: "center", zIndex: 60 }}>
@@ -1462,7 +1531,7 @@ function SliderRow({ label, val, onChange }) {
     </div>
   );
 }
-function DayLogModal({ initial, program, active, logIndex, onSave, onStart, onResume, onClose }) {
+function DayLogModal({ initial, program, active, logIndex, onSave, onStart, onResume, onEnterHistory, onClose }) {
   const [date, setDate] = useState(initial.date);
   const [kind, setKind] = useState(initial.kind);
   const [dayId, setDayId] = useState(String(initial.dayId || 1));
@@ -1519,7 +1588,8 @@ function DayLogModal({ initial, program, active, logIndex, onSave, onStart, onRe
       <button className={kind === "rest" || isCustom ? "gold-btn" : "ghost-btn"} type="submit" disabled={!valid || saving || (kind === "workout" && !!sameActive)}>
         <Check size={17} /> {saving ? "Saving…" : kind === "rest" ? "Save rest day" : "Log completed workout"}
       </button>
-      {kind === "workout" && isCustom && <p className="helper-text">Custom completion logs appear in your calendar. They do not add set or strength totals.</p>}
+      {kind === "workout" && <button type="button" className="text-button" disabled={!valid || saving} onClick={() => onEnterHistory(date, dayId)}>Enter past exercises, weights & reps</button>}
+      {kind === "workout" && isCustom && <p className="helper-text">Log completion here, or enter your past sets to include them in your progress.</p>}
     </form>
   </Sheet>;
 }
@@ -1540,11 +1610,11 @@ function BatIcon({ size = 16, color = "currentColor" }) {
 /*  HOME                                                                    */
 /* ---------------------------------------------------------------------- */
 
-function HomeView({ active, openDay, sessions, deloadSignal, deloadActive, startDeload, endDeload, setTab, profile, nutrition, program, readinessPct, readinessTier, onTapReadiness, logIndex, chooseDay }) {
+function HomeView({ active, openDay, sessions, deloadSignal, deloadActive, startDeload, endDeload, setTab, profile, nutrition, program, readinessPct, readinessTier, onTapReadiness, logIndex, chooseDay, setDayType, openPastWorkout }) {
   const todayKey = dateKey();
   const todayLog = logIndex.get(todayKey);
   const workoutCount = todayLog?.workouts || 0;
-  const todayTitle = active ? sessionTitle(active, program) : workoutCount ? `${workoutCount} workout${workoutCount === 1 ? "" : "s"} logged` : todayLog?.rest ? "Rest day logged" : "Train on your terms";
+  const todayTitle = active ? sessionTitle(active, program) : todayLog?.dayType === "rest" ? "You chose a rest day" : workoutCount ? `${workoutCount} workout${workoutCount === 1 ? "" : "s"} logged` : todayLog?.dayType === "workout" ? "You chose a workout day" : "Choose your day";
 
   const today = nutrition.days[todayKey] || { calories: [], hydration: [] };
   const totalKcal = today.calories.reduce((s, c) => s + (Number(c.kcal) || 0), 0);
@@ -1594,12 +1664,14 @@ function HomeView({ active, openDay, sessions, deloadSignal, deloadActive, start
             </div>
             <ChevronRight size={18} color="var(--dim)" />
           </div>
+          <DayTypeControl date={todayKey} value={todayLog?.dayType} onChange={setDayType} />
           <button className="gold-btn" style={{ marginTop: 12 }} onClick={() => active ? openDay(active.dayId, sessionDateKey(active)) : chooseDay(todayKey)}>
             <Play size={15} />
             {active ? "CONTINUE WORKOUT" : "CHOOSE A WORKOUT"}
           </button>
           <button className="ghost-btn" style={{ marginTop: 9 }} onClick={() => chooseDay(todayKey, "rest")}><Pause size={16} /> LOG REST DAY</button>
-          <button className="text-button" onClick={() => setTab("progress")}>View or edit your training calendar <ChevronRight size={14} /></button>
+          <button className="text-button" onClick={() => setTab("progress")}>Set workout & rest days on my calendar <ChevronRight size={14} /></button>
+          <button className="ghost-btn" onClick={() => openPastWorkout()}>Add past workout</button>
         </div>
 
         <div className="stat-grid-2">
@@ -1637,15 +1709,17 @@ function HomeView({ active, openDay, sessions, deloadSignal, deloadActive, start
 /*  PROGRAM                                                                 */
 /* ---------------------------------------------------------------------- */
 
-function ProgramView({ logIndex, active, openDay, program, chooseDay }) {
+function ProgramView({ logIndex, active, openDay, program, chooseDay, setDayType, openPastWorkout }) {
   const [selectedDate, setSelectedDate] = useState(dateKey());
   const valid = validLogDate(selectedDate) && selectedDate <= dateKey();
   const records = logIndex.get(selectedDate)?.records || [];
   return <>
     <div className="today-card">
-      <div className="lbl">WORKOUT LIBRARY</div><div className="nm">Your five sessions. No fixed weekdays.</div>
+      <div className="lbl">YOUR SCHEDULE</div><div className="nm">You choose which days to train.</div>
       <p className="helper-text">Pick the date you trained, then choose any session. Saturday can be a workout; Monday can be rest.</p>
-      <label className="form-label">Training date<input type="date" className="gu-input" value={selectedDate} max={dateKey()} onChange={event => setSelectedDate(event.target.value)} /></label>
+      <label className="form-label">Training date<input type="date" className="gu-input" value={selectedDate} onChange={event => setSelectedDate(event.target.value)} /></label>
+      <DayTypeControl date={selectedDate} value={logIndex.get(selectedDate)?.dayType} onChange={setDayType} />
+      <p className="helper-text">Plan future days here too. Record completed workouts for today or any past date.</p>
     </div>
     {active && <div className="active-workout"><span>Unfinished: {sessionTitle(active, program)} · {sessionDateKey(active)}</span><button className="ghost-btn" onClick={() => openDay(active.dayId, sessionDateKey(active))}>Resume workout</button></div>}
     {Object.entries(program).filter(([, day]) => day.exercises).map(([id, day], index) => {
@@ -1658,6 +1732,7 @@ function ProgramView({ logIndex, active, openDay, program, chooseDay }) {
     })}
     <button className="ghost-btn" disabled={!valid} onClick={() => chooseDay(selectedDate, "rest")}><Pause size={16} /> Log a rest day</button>
     <button className="text-button" disabled={!valid} onClick={() => chooseDay(selectedDate, "workout", "custom")}>Log a custom workout <Plus size={16} /></button>
+    <button className="ghost-btn" disabled={!valid} onClick={() => openPastWorkout(selectedDate)}>Enter a past workout with sets</button>
   </>;
 }
 
@@ -2081,14 +2156,15 @@ function volumeForSessions(sessionList, program) {
 }
 
 const CALENDAR_DATE_LABEL = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-const LOG_STATUS_LABEL = { done: "Workout logged", rest: "Rest day logged", "active-log": "Workout in progress", "check-in": "Readiness check-in" };
+const LOG_STATUS_LABEL = { done: "Workout logged", rest: "Rest day", "workout-day": "Workout day, no workout logged", "active-log": "Workout in progress", "check-in": "Readiness check-in" };
 
-const DayDetail = memo(function DayDetail({ dateStr, logDay, program, onLogDate, onRemoveLog }) {
+const DayDetail = memo(function DayDetail({ dateStr, logDay, program, onLogDate, onRemoveLog, setDayType, openPastWorkout, units }) {
   const records = logDay?.records || [];
   const future = dateStr > dateKey();
   return <div className="day-detail">
-    <h3>{keyToDate(dateStr).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</h3>
-    {!records.length && <p className="helper-text">{future ? "Choose today or a past date to log a day." : "Nothing logged. This date is not automatically a workout or rest day."}</p>}
+    <h3>{keyToDate(dateStr).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric", year: "numeric" })}</h3>
+    <DayTypeControl date={dateStr} value={logDay?.dayType} onChange={setDayType} />
+    <p className="helper-text">{future ? "Choose a workout or rest day now. Add the completed workout when it happens." : "Change the day type whenever you like. Your recorded sets stay saved below."}</p>
     {records.map(session => {
       const kind = sessionKind(session, program);
       const title = sessionTitle(session, program);
@@ -2096,17 +2172,23 @@ const DayDetail = memo(function DayDetail({ dateStr, logDay, program, onLogDate,
       const minutes = sessionDuration(session);
       return <div className="logged-session" key={session.id}>
         <div className="info"><div className="nm">{title}</div>
-          <div className="sub">{session.inProgress ? "In progress" : kind === "rest" ? "Rest logged" : kind === "check-in" ? "Check-in only" : session.manualLog ? "Completed · no sets recorded" : "Completed"}{setCount ? ` · ${setCount} sets` : ""}{minutes ? ` · ${fmtDuration(minutes)}` : ""}</div>
+          <div className="sub">{session.inProgress ? "In progress" : kind === "rest" ? "Recovery entry" : kind === "check-in" ? "Check-in only" : session.manualLog ? "Completed · no sets recorded" : "Completed"}{setCount ? ` · ${setCount} sets` : ""}{minutes ? ` · ${fmtDuration(minutes)}` : ""}</div>
           {session.notes && <p className="log-notes">{session.notes}</p>}
+          {!!setCount && <details className="recorded-sets"><summary>View recorded sets</summary>{Object.entries(session.entries || {}).map(([id, entry]) => {
+            const definition = [...(session.template?.exercises || program[session.dayId]?.exercises || []), ...(session.extras || [])].find(exercise => exercise.id === id);
+            return <div key={id}><strong>{session.swaps?.[id]?.name || definition?.name || "Exercise"}</strong><ul>{(entry?.sets || []).map((set, index) => <li key={set.id || index}>Set {index + 1}: {definition?.timeBased ? `${set.seconds} seconds` : `${fmtWeight(set.weight || 0, units)} ${weightUnitLabel(units)} × ${set.reps} reps`}{set.type === "W" ? " · warm-up" : ""}</li>)}</ul></div>;
+          })}</details>}
+          {kind === "workout" && !session.inProgress && <button className="text-button" onClick={() => openPastWorkout(dateStr, session)}>Edit workout</button>}
         </div>
         {!session.inProgress && <button className="icon-btn" aria-label={`Remove ${title} log`} onClick={() => onRemoveLog(session.id)}><X size={16} /></button>}
       </div>;
     })}
     <button className="gold-btn" disabled={future} onClick={() => onLogDate(dateStr)}><Plus size={17} /> Log workout / rest day</button>
+    <button className="ghost-btn" style={{ marginTop: 10 }} disabled={future} onClick={() => openPastWorkout(dateStr)}>Enter workout details for this date</button>
   </div>;
 });
 
-const CalendarPanel = memo(function CalendarPanel({ logIndex, program, onLogDate, onRemoveLog }) {
+const CalendarPanel = memo(function CalendarPanel({ logIndex, program, onLogDate, onRemoveLog, setDayType, openPastWorkout, units }) {
   const [calMonth, setCalMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(dateKey());
   const year = calMonth.getFullYear(), month = calMonth.getMonth();
@@ -2126,7 +2208,7 @@ const CalendarPanel = memo(function CalendarPanel({ logIndex, program, onLogDate
     for (const [key, value] of logIndex) {
       if (!key.startsWith(prefix)) continue;
       workouts += value.workouts;
-      if (value.rest && !value.workouts && !value.inProgress) rest++;
+      if (value.dayType === "rest") rest++;
     }
     return { workouts, rest };
   }, [logIndex, year, month]);
@@ -2135,13 +2217,15 @@ const CalendarPanel = memo(function CalendarPanel({ logIndex, program, onLogDate
     setCalMonth(next); setSelectedDate(dateKey(next));
   };
   return <Card title="Training Calendar" className="calendar-card">
-    <p className="helper-text calendar-intro">Only the days you log count. Tap a date to add or edit a workout or rest day.</p>
+    <p className="helper-text calendar-intro">No fixed workout or rest days. Pick any date, then choose its type. You can enter workouts from before you started using the app.</p>
+    <label className="form-label">Go to date<input className="gu-input" type="date" value={selectedDate} onChange={event => { const key = event.target.value; if (validLogDate(key)) { const date = keyToDate(key); setSelectedDate(key); setCalMonth(new Date(date.getFullYear(), date.getMonth(), 1)); } }} /></label>
+    <button className="ghost-btn" onClick={() => openPastWorkout()}>Add past workout</button>
     <div className="period-nav">
       <button className="icon-btn" aria-label="Previous month" onClick={() => moveMonth(-1)}><ChevronLeft size={20} /></button>
       <span>{calMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</span>
       <button className="icon-btn" aria-label="Next month" onClick={() => moveMonth(1)}><ChevronRight size={20} /></button>
     </div>
-    <div className="calendar-summary">{counts.workouts} workout{counts.workouts !== 1 ? "s" : ""} · {counts.rest} rest day{counts.rest !== 1 ? "s" : ""}</div>
+    <div className="calendar-summary">{counts.workouts} recorded workout{counts.workouts !== 1 ? "s" : ""} · {counts.rest} rest day{counts.rest !== 1 ? "s" : ""}</div>
     <div className="cal-grid">
       {["M", "T", "W", "T", "F", "S", "S"].map((label, index) => <div key={index} className="cal-dow">{label}</div>)}
       {cells.map((cell, index) => {
@@ -2153,8 +2237,8 @@ const CalendarPanel = memo(function CalendarPanel({ logIndex, program, onLogDate
           onClick={() => setSelectedDate(cell.key)}>{cell.number}<span className="dot" /></button>;
       })}
     </div>
-    <div className="cal-legend"><span><i className="dot done" /> Workout</span><span><i className="dot rest" /> Rest</span><span><i className="dot check-in" /> Check-in</span></div>
-    <DayDetail dateStr={selectedDate} logDay={logIndex.get(selectedDate)} program={program} onLogDate={onLogDate} onRemoveLog={onRemoveLog} />
+    <div className="cal-legend"><span><i className="dot done" /> Workout logged</span><span><i className="dot workout-day" /> Workout day</span><span><i className="dot rest" /> Rest</span></div>
+    <DayDetail dateStr={selectedDate} logDay={logIndex.get(selectedDate)} program={program} onLogDate={onLogDate} onRemoveLog={onRemoveLog} setDayType={setDayType} openPastWorkout={openPastWorkout} units={units} />
   </Card>;
 });
 
@@ -2204,10 +2288,12 @@ function StrengthTab({ sessions, program, prLog, units }) {
 }
 
 function VolumeTab({ sessions, program }) {
-  const currentWeek = isoWeek(new Date());
+  const [weekDate, setWeekDate] = useState(dateKey());
+  const currentWeek = isoWeek(keyToDate(weekDate));
   const totals = useMemo(() => volumeForSessions(sessions.filter((s) => sessionKind(s, program) === "workout" && validLogDate(sessionDateKey(s)) && isoWeek(keyToDate(sessionDateKey(s))) === currentWeek), program), [sessions, program, currentWeek]);
   return (
-    <Card title="Muscle Workload" sub="this week vs target">
+    <Card title="Muscle Workload" sub="selected week vs target">
+      <label className="form-label">Week containing<input className="gu-input" type="date" value={weekDate} max={dateKey()} onChange={event => { if (validLogDate(event.target.value)) setWeekDate(event.target.value); }} /></label>
       {Object.entries(MUSCLES).map(([key, m]) => {
         const val = Math.round((totals[key] || 0) * 10) / 10;
         const pct = Math.min(100, (val / m.max) * 100);
@@ -2227,19 +2313,30 @@ function VolumeTab({ sessions, program }) {
 function BodyTab({ measurements, addMeasurement, photoIndex, addPhoto, deletePhoto, profile }) {
   const units = profile.units;
   const [form, setForm] = useState({});
-  const submit = () => {
+  const [measurementDate, setMeasurementDate] = useState(dateKey());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async () => {
+    if (saving) return;
+    setError("");
+    if (!validLogDate(measurementDate) || measurementDate > dateKey()) { setError("Choose today or an earlier date."); return; }
     if (!Object.values(form).some((v) => v !== "" && v != null)) return;
     const clean = {};
+    let invalid = false;
     MEASURE_FIELDS.forEach(({ key, kind }) => {
       const raw = form[key];
       if (raw === "" || raw == null) return;
+      if (!Number.isFinite(Number(raw)) || Number(raw) <= 0 || (kind === "pct" && Number(raw) > 100)) invalid = true;
       clean[key] = kind === "weight" ? parseWeightInput(raw, units) : kind === "length" ? parseLengthInput(raw, units) : Number(raw);
     });
-    addMeasurement(clean);
-    setForm({});
+    if (invalid) { setError("Enter positive measurements and a body fat percentage up to 100."); return; }
+    setSaving(true);
+    try { if (await addMeasurement(clean, measurementDate)) setForm({}); else setError("Measurements could not be saved. Please try again."); }
+    catch (failure) { setError(failure.message); }
+    finally { setSaving(false); }
   };
   const sorted = useMemo(() => measurements.slice().sort((a, b) => new Date(a.date) - new Date(b.date)), [measurements]);
-  const weightSeries = useMemo(() => sorted.filter((m) => m.weight != null && Number.isFinite(Number(m.weight))).slice(-12).map((m) => ({ date: new Date(m.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }), kg: Math.round(fmtWeight(m.weight, units) * 10) / 10 })), [sorted, units]);
+  const weightSeries = useMemo(() => sorted.filter((m) => m.weight != null && Number.isFinite(Number(m.weight))).slice(-12).map((m) => ({ date: keyToDate(sessionDateKey(m)).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" }), kg: Math.round(fmtWeight(m.weight, units) * 10) / 10 })), [sorted, units]);
   const latestW = weightSeries[weightSeries.length - 1];
   const prevW = weightSeries[weightSeries.length - 2];
 
@@ -2256,15 +2353,18 @@ function BodyTab({ measurements, addMeasurement, photoIndex, addPhoto, deletePho
       )}
 
       <Card title="Body Measurements" sub={units === "metric" ? "kg / cm" : "lb / in"}>
+        <p className="helper-text">Add today's measurements or enter older progress from before you used the app.</p>
+        <label className="form-label">Measurement date<input className="gu-input" type="date" max={dateKey()} value={measurementDate} onChange={event => setMeasurementDate(event.target.value)} /></label>
         <div className="measure-grid">
           {MEASURE_FIELDS.map(({ key, label, kind }) => (
             <div className="cell" key={key}>
               <label>{label}{kind === "weight" ? ` (${weightUnitLabel(units)})` : kind === "length" ? ` (${lengthUnitLabel(units)})` : " %"}</label>
-              <input className="gu-input" type="number" value={form[key] ?? ""} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} />
+              <input className="gu-input" aria-label={`${label} measurement`} type="number" inputMode="decimal" min="0" step="any" value={form[key] ?? ""} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} />
             </div>
           ))}
         </div>
-        <button className="gold-btn" onClick={submit}><Plus size={16} /> Log Measurements</button>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button className="gold-btn" onClick={submit} disabled={saving || !validLogDate(measurementDate) || measurementDate > dateKey()}><Plus size={16} /> {saving ? "Saving…" : "Log Measurements"}</button>
         {sorted.length > 0 && (
           <div style={{ marginTop: 14 }}>
             {MEASURE_FIELDS.map(({ key, label, kind }) => {
@@ -2275,7 +2375,7 @@ function BodyTab({ measurements, addMeasurement, photoIndex, addPhoto, deletePho
               const trend = prev ? (latest[key] > prev[key] ? "up" : latest[key] < prev[key] ? "down" : "flat") : null;
               return (
                 <div className="measure-row" key={key}>
-                  <div className="info">{label}</div>
+                  <div className="info">{label}<div className="sub">{keyToDate(sessionDateKey(latest)).toLocaleDateString()}</div></div>
                   <div className="val">{fmt(latest[key])}{kind === "pct" ? "%" : ""}</div>
                   {trend && <span className={`trend ${trend}`}>{trend === "up" ? "↑" : trend === "down" ? "↓" : "→"}</span>}
                 </div>
@@ -2294,18 +2394,23 @@ function PhotosPanel({ photoIndex, addPhoto, deletePhoto }) {
   const inputRef = useRef(null);
   const [pendingAngle, setPendingAngle] = useState(null);
   const [busy, setBusy] = useState(false);
-  const mk = monthKey();
+  const [photoDate, setPhotoDate] = useState(dateKey());
+  const [error, setError] = useState("");
+  const valid = validLogDate(photoDate) && photoDate <= dateKey();
+  const mk = validLogDate(photoDate) ? photoDate.slice(0, 7) : monthKey();
   const thisMonth = ANGLES.map((a) => {
-    const list = photoIndex.filter((p) => p.angle === a && p.monthKey === mk).sort((x, y) => new Date(y.date) - new Date(x.date));
+    const list = photoIndex.filter((p) => p.angle === a && sessionDateKey(p) === photoDate).sort((x, y) => new Date(y.date) - new Date(x.date));
     return { angle: a, entry: list[0] || null };
   });
-  const openPicker = (angle) => { setPendingAngle(angle); inputRef.current?.click(); };
+  const openPicker = (angle) => { if (!valid || busy) return; setError(""); setPendingAngle(angle); inputRef.current?.click(); };
   const onFile = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file || !pendingAngle) return;
     setBusy(true);
-    try { await addPhoto(pendingAngle, await fileToCompressedDataUrl(file)); } finally { setBusy(false); setPendingAngle(null); }
+    try { await addPhoto(pendingAngle, await fileToCompressedDataUrl(file), photoDate); }
+    catch (failure) { setError(failure.message); }
+    finally { setBusy(false); setPendingAngle(null); }
   };
   const [compareAngle, setCompareAngle] = useState("front");
   const compareList = photoIndex.filter((p) => p.angle === compareAngle).sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -2314,8 +2419,11 @@ function PhotosPanel({ photoIndex, addPhoto, deletePhoto }) {
   const rightPick = rightId || compareList[compareList.length - 1]?.id || "";
 
   return (
-    <Card title="Progress Photos" sub={new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" })}>
-      <input ref={inputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={onFile} />
+    <Card title="Progress Photos" sub={keyToDate(`${mk}-01`).toLocaleDateString(undefined, { month: "long", year: "numeric" })}>
+      <label className="form-label">Photo date<input className="gu-input" type="date" max={dateKey()} value={photoDate} disabled={busy} onChange={event => setPhotoDate(event.target.value)} /></label>
+      <p className="helper-text">Choose when the photo was taken, then add it from your photo library.</p>
+      <input ref={inputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFile} />
+      {error && <p className="form-error" role="alert">{error}</p>}
       <div className="photo-slots">
         {thisMonth.map(({ angle, entry }) => (
           <div className="photo-slot" key={angle} onClick={() => !entry && openPicker(angle)}>
@@ -2330,14 +2438,14 @@ function PhotosPanel({ photoIndex, addPhoto, deletePhoto }) {
       <div className="chip-row" style={{ marginBottom: 10 }}>
         {ANGLES.map((a) => <button key={a} className={`seg-chip ${compareAngle === a ? "on" : ""}`} onClick={() => { setCompareAngle(a); setLeftId(""); setRightId(""); }}>{a.toUpperCase()}</button>)}
       </div>
-      {compareList.length < 2 ? <div style={{ fontSize: 12, color: "var(--dim)" }}>Add two {compareAngle} photos, in different months, to compare.</div> : (
+      {compareList.length < 2 ? <div style={{ fontSize: 12, color: "var(--dim)" }}>Add two {compareAngle} photos to compare your progress.</div> : (
         <div className="compare-row">
           <div className="compare-col">
-            <select className="rir-select" value={leftPick} onChange={(e) => setLeftId(e.target.value)}>{compareList.map((p) => <option key={p.id} value={p.id}>{new Date(p.date).toLocaleDateString(undefined, { month: "short", year: "numeric" })}</option>)}</select>
+            <select className="rir-select" value={leftPick} onChange={(e) => setLeftId(e.target.value)}>{compareList.map((p) => <option key={p.id} value={p.id}>{keyToDate(sessionDateKey(p)).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</option>)}</select>
             {leftPick && <PhotoThumb id={leftPick} />}
           </div>
           <div className="compare-col">
-            <select className="rir-select" value={rightPick} onChange={(e) => setRightId(e.target.value)}>{compareList.map((p) => <option key={p.id} value={p.id}>{new Date(p.date).toLocaleDateString(undefined, { month: "short", year: "numeric" })}</option>)}</select>
+            <select className="rir-select" value={rightPick} onChange={(e) => setRightId(e.target.value)}>{compareList.map((p) => <option key={p.id} value={p.id}>{keyToDate(sessionDateKey(p)).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</option>)}</select>
             {rightPick && <PhotoThumb id={rightPick} />}
           </div>
         </div>
@@ -2346,7 +2454,7 @@ function PhotosPanel({ photoIndex, addPhoto, deletePhoto }) {
   );
 }
 
-function ProgressView({ subtab, setSubtab, sessions, active, measurements, addMeasurement, photoIndex, addPhoto, deletePhoto, profile, program, prLog, logIndex, onLogDate, onRemoveLog }) {
+function ProgressView({ subtab, setSubtab, sessions, active, measurements, addMeasurement, photoIndex, addPhoto, deletePhoto, profile, program, prLog, logIndex, onLogDate, onRemoveLog, setDayType, openPastWorkout }) {
   const pool = useMemo(() => active ? [...sessions.filter(session => session.id !== active.id), active] : sessions, [sessions, active]);
   return (
     <>
@@ -2355,7 +2463,7 @@ function ProgressView({ subtab, setSubtab, sessions, active, measurements, addMe
           <button key={t} className={`subtab ${subtab === t ? "on" : ""}`} onClick={() => setSubtab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>
         ))}
       </div>
-      {subtab === "overview" && <CalendarPanel logIndex={logIndex} program={program} onLogDate={onLogDate} onRemoveLog={onRemoveLog} />}
+      {subtab === "overview" && <CalendarPanel logIndex={logIndex} program={program} onLogDate={onLogDate} onRemoveLog={onRemoveLog} setDayType={setDayType} openPastWorkout={openPastWorkout} units={profile.units} />}
       {subtab === "strength" && <StrengthTab sessions={pool} program={program} prLog={prLog} units={profile.units} />}
       {subtab === "volume" && <VolumeTab sessions={pool} program={program} />}
       {subtab === "body" && <BodyTab measurements={measurements} addMeasurement={addMeasurement} photoIndex={photoIndex} addPhoto={addPhoto} deletePhoto={deletePhoto} profile={profile} />}
@@ -2661,9 +2769,9 @@ function BackupSection({ exportData, importData }) {
   };
   const confirmImport = async () => {
     setImporting(true);
-    await importData(pending);
-    setImporting(false);
-    setPending(null);
+    try { if (await importData(pending)) setPending(null); else setError("The backup could not be fully restored. Please try again."); }
+    catch (failure) { setError(failure.message); }
+    finally { setImporting(false); }
   };
 
   return (
@@ -2829,6 +2937,7 @@ function MoreView({ profile, updateProfile, nutrition, updateNutritionSettings, 
         <div className="bar" style={{ width: "38%" }} />
         <p>Progress isn't always loud. Sometimes it's just you showing up again.</p>
       </div>
+      <p className="helper-text centered">Version {APP_VERSION} · <a href={`?update=${APP_VERSION}`} style={{ color: "var(--gold)" }}>Load latest version</a></p>
     </>
   );
 }

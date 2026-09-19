@@ -10,10 +10,21 @@ Open the live app in a modern browser. On your phone, use **Add to Home Screen**
 or **Install app** when supported. The app shell is cached after the first visit.
 Exercise demonstrations require an internet connection.
 
-Choose **Choose a workout** or **Log rest day** on Home, or tap a date in
-**Progress → Overview → Log workout / rest day**. Any session can be logged on
-any day, including past dates. Start tracking sets, log a completed template,
-or give a custom workout a name. Unlogged days remain unlogged.
+Use **Workout day / Rest day / Not set** on Home, Program, or the Progress
+calendar to decide each date's type. You can change it later and plan future
+dates. Changing the type keeps recorded workouts and sets intact; choosing a
+workout day does not count as a completed workout.
+
+Use **Add past workout** to enter a date, workout name, exercises, sets, weights,
+reps, or timed holds from any earlier year. Choose a template or use custom
+exercises. In **Progress → Overview**, **Go to date** jumps straight to an old
+date; **Edit workout** corrects its date or sets. Historical entries do not
+interrupt an unfinished live workout.
+
+**Progress → Body** has separate measurement and photo dates, so old body
+measurements and photos appear in chronological order. **Progress → Volume**
+lets you select a past week. Quick completion logs and live set tracking remain
+available from **Choose a workout**.
 
 Progress uses an indexed calendar and a lightweight weight chart. Phone controls
 have larger touch targets, safe-area spacing, and keyboard-aware dialogs. Saved
@@ -44,8 +55,9 @@ npm ci
 npm run dev
 ```
 
-Run `npm test` for date handling, saved-log preservation, tracked workout flows,
-and Progress checks with a large history. Component tests use in-memory storage;
+Run `npm test` for date choices, historical workouts and measurements, saved-log
+preservation, tracked workout flows, and Progress with a large history.
+Component tests use in-memory storage;
 they do not change real app data.
 
 ## Publish an update
@@ -61,6 +73,12 @@ GitHub Pages is configured to deploy from **main / (root)**, so its existing
 **pages build and deployment** workflow publishes the updated site. No custom
 workflow, deployment token, backend server, or paid host is required.
 The `.nojekyll` file makes Pages serve the built app directly.
+
+The app requests current HTML on launch, with a cached fallback when offline.
+**More → Load latest version** opens an explicit update link. A new service worker
+refreshes that requesting tab without clearing IndexedDB; ordinary open forms
+receive an update notice instead of being reloaded. The current version is shown
+at the bottom of More.
 
 For other static hosts, `npm run build:bundle` creates a deployable `dist/` folder.
 

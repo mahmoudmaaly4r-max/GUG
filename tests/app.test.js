@@ -49,12 +49,12 @@ test("manual rest and workout dates are saved, shown in the calendar, and surviv
   await user.click(screen.getByRole("button", { name: "LOG REST DAY" }));
   fireEvent.change(screen.getByLabelText("Log date"), { target: { value: day(-2) } });
   await user.click(screen.getByRole("button", { name: "Save rest day" }));
-  await waitFor(() => assert.equal(screen.queryByRole("dialog"), null));
+  await waitFor(() => assert.ok(screen.queryByRole("dialog") === null));
   await user.click(screen.getByRole("button", { name: "CHOOSE A WORKOUT" }));
   fireEvent.change(screen.getByLabelText("Log date"), { target: { value: day(-1) } });
   await user.selectOptions(screen.getByLabelText("Workout", { exact: true }), "2");
   await user.click(screen.getByRole("button", { name: "Log completed workout" }));
-  await waitFor(() => assert.equal(screen.queryByRole("dialog"), null));
+  await waitFor(() => assert.ok(screen.queryByRole("dialog") === null));
   const sessions = await read("sessions");
   assert.equal(sessions.length, 2);
   assert.equal(sessions.find(session => session.kind === "rest").localDate, day(-2));
@@ -62,7 +62,7 @@ test("manual rest and workout dates are saved, shown in the calendar, and surviv
   assert.equal(sessions.find(session => session.kind === "workout").dayId, 2);
   cleanup(); await launch();
   await user.click(screen.getByRole("button", { name: "Progress", exact: true }));
-  assert.ok(screen.getByRole("button", { name: /Rest day logged/ }));
+  assert.ok(screen.getByRole("button", { name: /: Rest day/ }));
   assert.ok(screen.getByRole("button", { name: /Workout logged/ }));
 });
 
@@ -71,7 +71,7 @@ test("logging readiness never wipes completed workout sets", async () => {
   await write("sessions", [workout]); await launch();
   await user.click(screen.getByRole("button", { name: "Log readiness" }));
   await user.click(screen.getByRole("button", { name: "SAVE", exact: true }));
-  await waitFor(() => assert.equal(screen.queryByRole("dialog"), null));
+  await waitFor(() => assert.ok(screen.queryByRole("dialog") === null));
   const sessions = await read("sessions");
   assert.equal(sessions.length, 1);
   assert.deepEqual(sessions[0].entries, workout.entries);
@@ -117,7 +117,7 @@ test("future logging is disabled and custom completed workouts are supported", a
   await user.selectOptions(screen.getByLabelText("Workout", { exact: true }), "custom");
   await user.type(screen.getByLabelText("Custom workout name"), "Swimming");
   await user.click(screen.getByRole("button", { name: "Log completed workout" }));
-  await waitFor(() => assert.equal(screen.queryByRole("dialog"), null));
+  await waitFor(() => assert.ok(screen.queryByRole("dialog") === null));
   assert.equal((await read("sessions"))[0].workoutName, "Swimming");
 });
 
@@ -132,4 +132,66 @@ test("Progress mounts with 10,000 logs and body/strength/volume tabs remain usab
   await user.click(screen.getByRole("button", { name: "Strength", exact: true })); assert.ok(screen.getByText("est. 1RM change"));
   await user.click(screen.getByRole("button", { name: "Volume", exact: true })); assert.ok(screen.getByText("Muscle Workload"));
   await user.click(screen.getByRole("button", { name: "Body", exact: true })); assert.ok(screen.getByText("Body Measurements"));
+});
+
+test("a date can switch from workout to rest and back independently of recorded sets", async () => {
+  const workout = { id: "old-saturday", dayId: 1, localDate: "2020-06-13", date: "2020-06-13T12:00:00", entries: { d1e1: { sets: [{ id: "set", type: "T", weight: 100, reps: 8 }] } } };
+  await write("sessions", [workout]); await launch();
+  await user.click(screen.getByRole("button", { name: "Progress", exact: true }));
+  fireEvent.change(screen.getByLabelText("Go to date"), { target: { value: "2020-06-13" } });
+  await user.click(screen.getByRole("button", { name: "Rest day", exact: true }));
+  await waitFor(async () => assert.equal((await read("dayChoices"))["2020-06-13"], "rest"));
+  assert.ok(screen.getByRole("button", { name: "Saturday, June 13, 2020: Rest day" }));
+  assert.deepEqual((await read("sessions"))[0], workout);
+  await user.click(screen.getByRole("button", { name: "Workout day", exact: true }));
+  await waitFor(async () => assert.equal((await read("dayChoices"))["2020-06-13"], "workout"));
+  assert.ok(screen.getByRole("button", { name: "Saturday, June 13, 2020: Workout logged" }));
+  cleanup(); await launch();
+  await user.click(screen.getByRole("button", { name: "Program", exact: true }));
+  fireEvent.change(screen.getByLabelText("Training date"), { target: { value: "2030-06-15" } });
+  await user.click(screen.getByRole("button", { name: "Workout day", exact: true }));
+  await waitFor(async () => assert.equal((await read("dayChoices"))["2030-06-15"], "workout"));
+  assert.equal((await read("sessions")).length, 1);
+});
+
+test("past workouts accept direct sets, can be edited, and leave an active workout intact", async () => {
+  const active = { id: "still-training", dayId: 2, date: new Date().toISOString(), entries: { d2e1: { sets: [{ id: "active-set", type: "T", weight: 90, reps: 9 }] } } };
+  await launch(); await write("activeSession", active);
+  cleanup(); render(React.createElement(App)); await screen.findByRole("button", { name: "CONTINUE WORKOUT" });
+  await user.click(screen.getByRole("button", { name: "Add past workout", exact: true }));
+  fireEvent.change(screen.getByLabelText("Workout date"), { target: { value: "2020-06-13" } });
+  await user.selectOptions(screen.getByLabelText("Workout template"), "1");
+  await user.selectOptions(screen.getByLabelText("Exercise to add"), "d1e1");
+  await user.click(screen.getByRole("button", { name: "Add exercise", exact: true }));
+  await user.type(screen.getByLabelText("Exercise 1 set 1 weight"), "100");
+  await user.type(screen.getByLabelText("Exercise 1 set 1 reps"), "8");
+  await user.click(screen.getByRole("button", { name: "Save past workout" }));
+  await waitFor(() => assert.ok(screen.queryByRole("dialog") === null));
+  assert.deepEqual(await read("activeSession"), active);
+  assert.equal((await read("sessions"))[0].entries.d1e1.sets[0].weight, 100);
+  await user.click(screen.getByRole("button", { name: "Progress", exact: true }));
+  fireEvent.change(screen.getByLabelText("Go to date"), { target: { value: "2020-06-13" } });
+  await user.click(screen.getByRole("button", { name: "Edit workout", exact: true }));
+  fireEvent.change(screen.getByLabelText("Workout date"), { target: { value: "2020-06-14" } });
+  fireEvent.change(screen.getByLabelText("Exercise 1 set 1 reps"), { target: { value: "10" } });
+  await user.click(screen.getByRole("button", { name: "Save workout changes" }));
+  await waitFor(() => assert.ok(screen.queryByRole("dialog") === null));
+  const sessions = await read("sessions");
+  assert.equal(sessions.length, 1); assert.equal(sessions[0].localDate, "2020-06-14");
+  assert.equal(sessions[0].entries.d1e1.sets[0].reps, 10);
+  assert.deepEqual(await read("activeSession"), active);
+});
+
+test("body progress can be entered years before installation and remains ordered by measurement date", async () => {
+  await write("measurements", [{ id: "later", date: "2021-06-01T12:00:00", weight: 180 }]);
+  await launch(); await user.click(screen.getByRole("button", { name: "Progress", exact: true }));
+  await user.click(screen.getByRole("button", { name: "Body", exact: true }));
+  fireEvent.change(screen.getByLabelText("Measurement date"), { target: { value: "2020-06-13" } });
+  await user.type(screen.getByLabelText("Weight measurement"), "200");
+  await user.click(screen.getByRole("button", { name: "Log Measurements" }));
+  await waitFor(async () => assert.equal((await read("measurements")).length, 2));
+  const older = (await read("measurements")).find(entry => entry.weight === 200);
+  assert.equal(older.localDate, "2020-06-13");
+  assert.ok(screen.getByRole("img", { name: /Weight trend: Jun 13, 20: 200 lb, Jun 1, 21: 180 lb/ }));
+  assert.ok(screen.getByLabelText("Photo date"));
 });

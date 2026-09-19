@@ -31,8 +31,25 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
+        importScripts: ["./release-update.js"],
+        // Fetch the current HTML on launch; keep the precached index as an
+        // offline fallback. Avoid serving an old index for every navigation.
+        directoryIndex: null,
+        ignoreURLParametersMatching: [],
+        navigateFallback: null,
         // Never cache ExerciseDB API/media responses in the service worker — always hit the network for those.
         runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === "navigate",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "gotham-pages",
+              networkTimeoutSeconds: 4,
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 4 },
+              precacheFallback: { fallbackURL: "index.html" },
+            },
+          },
           {
             urlPattern: /^https:\/\/(oss\.exercisedb\.dev|static\.exercisedb\.dev)\//,
             handler: "NetworkOnly",

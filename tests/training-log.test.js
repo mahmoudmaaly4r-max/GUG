@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
-import { localDateKey, validLogDate, sessionDateKey, sessionKind, sessionTitle, makeTrainingEntry, indexTrainingLog, upsertDailyLog, withDailyReadiness, sessionDuration } from "../app/src/training-log.js";
+import { localDateKey, validLogDate, sessionDateKey, sessionKind, sessionTitle, makeTrainingEntry, indexTrainingLog, upsertDailyLog, withDailyReadiness, sessionDuration, updateDayChoice, makeCompletedWorkout, datedTimestamp } from "../app/src/training-log.js";
 
 const program = {
   1: { name: "THE ARMOR", focus: "Chest + Triceps", exercises: [{ id: "bench", name: "Bench press" }] },
@@ -110,4 +110,45 @@ test("large histories are indexed once for constant-time calendar lookups", () =
   assert.equal(index.size, 365);
   assert.equal([...index.values()].reduce((sum, day) => sum + day.workouts, 0), 10000);
   console.log(`Indexed 10,000 logs in ${elapsed.toFixed(1)} ms; month cells use Map lookups.`);
+});
+
+test("explicit rest overrides a workout marker without erasing any completed sets", () => {
+  const workout = { ...make({}), entries: { bench: { sets: [{ weight: 100, reps: 8 }] } } };
+  let choices = updateDayChoice({}, workout.localDate, "rest");
+  let day = indexTrainingLog([workout], program, null, choices).get(workout.localDate);
+  assert.equal(day.dayType, "rest"); assert.equal(day.status, "rest");
+  assert.deepEqual(day.records[0], workout); assert.equal(day.workouts, 1);
+  choices = updateDayChoice(choices, workout.localDate, "workout");
+  day = indexTrainingLog([workout], program, null, choices).get(workout.localDate);
+  assert.equal(day.status, "done");
+  choices = updateDayChoice(choices, workout.localDate, "unset");
+  assert.equal(indexTrainingLog([workout], program, null, choices).get(workout.localDate).dayType, null);
+});
+
+test("future day choices do not fabricate completed workouts", () => {
+  const choices = updateDayChoice({}, "2030-06-15", "workout");
+  const day = indexTrainingLog([], program, null, choices).get("2030-06-15");
+  assert.equal(day.status, "workout-day"); assert.equal(day.workouts, 0); assert.deepEqual(day.records, []);
+  assert.throws(() => updateDayChoice({}, "bad-date", "rest"), /valid date/);
+});
+
+test("historical sets retain actual dates, units, exercise IDs and readiness when edited", () => {
+  const exercises = [{ id: "bench", name: "Bench Press", primary: "Chest", loggedSets: [{ type: "T", weight: "100", reps: "8" }] }];
+  const entry = makeCompletedWorkout({ date: "2020-06-13", name: "Old workout", id: "old", exercises, units: "metric", program, now });
+  assert.equal(entry.localDate, "2020-06-13"); assert.equal(localDateKey(entry.date), "2020-06-13");
+  assert.equal(entry.entries.bench.sets[0].weight, 220.462); assert.equal(entry.entries.bench.sets[0].reps, 8);
+  assert.equal(entry.manualLog, false); assert.equal(entry.template.exercises[0].id, "bench");
+  const existing = { ...entry, readiness: { sleep: 4, energy: 3, soreness: 2 } };
+  const edited = makeCompletedWorkout({ date: "2020-06-14", name: "Corrected workout", existing, exercises, units: "metric", id: "ignored", program, now });
+  assert.equal(edited.id, "old"); assert.equal(edited.localDate, "2020-06-14"); assert.deepEqual(edited.readiness, existing.readiness);
+  assert.throws(() => makeCompletedWorkout({ date: "2020-06-13", name: "Old", exercises: [{ ...exercises[0], loggedSets: [{ reps: "", weight: "100" }] }], now }), /valid reps/);
+  assert.throws(() => makeCompletedWorkout({ date: "2030-01-01", name: "Old", exercises, now }), /today or an earlier date/);
+  assert.equal(localDateKey(datedTimestamp("2019-02-01", now)), "2019-02-01");
+});
+
+test("repeated custom exercise names share a history key and timed sets stay timed", () => {
+  const makeOld = id => makeCompletedWorkout({ date: "2020-06-13", name: "Core", id, exercises: [{ id, custom: true, name: "Hollow Hold", timeBased: true, loggedSets: [{ seconds: "45", type: "T" }] }], now });
+  const first = makeOld("one"), second = makeOld("two");
+  assert.deepEqual(Object.keys(first.entries), Object.keys(second.entries));
+  assert.equal(Object.values(first.entries)[0].sets[0].seconds, 45);
 });
