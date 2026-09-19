@@ -5,12 +5,14 @@ self.addEventListener("activate", event => {
   event.waitUntil((async () => {
     await self.clients.claim();
     const windows = await self.clients.matchAll({ type: "window" });
-    await Promise.all(windows.map(async client => {
+    windows.forEach(client => {
       const url = new URL(client.url);
       if (!url.searchParams.has("update")) return;
       url.searchParams.set("v", url.searchParams.get("update"));
       url.searchParams.delete("update");
-      try { await client.navigate(url.href); } catch { /* A closing tab needs no reload. */ }
-    }));
+      // Do not hold activation open while navigation waits for this worker to
+      // activate and handle its fetch request.
+      client.navigate(url.href).catch(() => { /* A closing tab needs no reload. */ });
+    });
   })());
 });
